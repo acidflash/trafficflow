@@ -83,8 +83,8 @@ func bootstrapAdmin(s *store) error {
 		return nil
 	}
 	password := os.Getenv("ADMIN_PASSWORD")
-	if len(password) < 12 {
-		return errors.New("ADMIN_PASSWORD must be at least 12 characters on first start")
+	if len(password) < 10 {
+		return errors.New("ADMIN_PASSWORD must be at least 10 characters on first start")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {

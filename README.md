@@ -5,7 +5,7 @@ Intern nätverkskarta för MikroTik RouterOS 7 och SwOS. Appen läser portstatus
 ## Starta
 
 1. Kopiera `.env.example` till `.env`.
-2. Sätt `ADMIN_PASSWORD` till ett unikt lösenord med minst 12 tecken.
+2. Sätt `ADMIN_PASSWORD` till ett unikt lösenord med minst 10 tecken.
 3. Skapa `APP_KEY` med `openssl rand -base64 32` och lägg värdet i `.env`. Spara nyckeln tillsammans med databasbackup; utan den går sparade SNMP-uppgifter inte att dekryptera.
 4. Sätt `HTTPS_HOST` till serverns LAN-IP-adress. Caddy skapar då ett internt TLS-certifikat för adressen.
 5. Kör `docker compose up --build -d` och öppna `https://<serverns IP>/`.
