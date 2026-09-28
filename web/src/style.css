@@ -294,16 +294,96 @@ button:disabled { cursor: not-allowed; opacity: .45 }
   .details { position: absolute; z-index: 10; right: 0; top: 48px; bottom: 0; width: min(344px, calc(100vw - 240px)); box-shadow: -12px 0 32px oklch(8% .01 var(--hue) / .5) }
   .details.empty-details { display: none }
 }
-@media (max-width: 620px) {
-  .app-shell { height: auto; min-height: 100vh; overflow: visible }
-  .live-indicator { font-size: 11px; margin-right: 2px }
-  .workspace { display: flex; flex-direction: column }
-  .sidebar { border-right: 0; border-bottom: 1px solid var(--line); max-height: none }
-  .device-list { max-height: 180px; overflow: auto }
-  .candidate-section { display: none }
-  .map-area { height: calc(100vh - 48px); min-height: 420px }
-  .details { position: fixed; top: auto; bottom: 0; left: 0; right: 0; width: 100%; height: min(72vh, 620px); border-left: 0; border-top: 1px solid var(--line-strong); border-radius: 14px 14px 0 0; box-shadow: 0 -12px 40px oklch(8% .01 var(--hue) / .6) }
-  .details.empty-details { display: none }
+/* Phone: one view at a time (map, device list or alarms) above a tab bar, with the detail panel
+   as a bottom sheet over the map. The page itself never scrolls, so panning the map is never
+   mistaken for scrolling. */
+.app-shell.is-phone { height: 100vh; height: 100dvh; min-height: 0 }
+.is-phone .topbar { padding: 0 max(6px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left)) }
+.is-phone .topbar-actions { gap: 2px }
+.is-phone .live-indicator { font-size: 11.5px; margin-right: 4px }
+.is-phone .live-long { display: none }
+.is-phone .icon-button { width: 40px; height: 40px }
+.is-phone > .health { flex: none; background: var(--surface); border-bottom: 1px solid var(--line) }
+.is-phone > .health > * { padding: 8px 14px 9px; gap: 2px }
+.is-phone > .health strong { font-size: 18px }
+.is-phone .workspace { display: block; position: relative; min-height: 0 }
+/* The map stays laid out under the other views, so it keeps its size and viewport while hidden. */
+.is-phone .workspace > .map-area { position: absolute; inset: 0 }
+.is-phone .workspace > .sidebar, .is-phone .workspace > .phone-alerts { position: absolute; inset: 0; z-index: 12; visibility: hidden }
+.is-phone .workspace[data-view="devices"] > .sidebar, .is-phone .workspace[data-view="alerts"] > .phone-alerts { visibility: visible }
+.is-phone .sidebar { border-right: 0; overscroll-behavior: contain }
+.is-phone .sidebar-actions { grid-template-columns: repeat(4, 1fr); padding: 14px }
+.is-phone .sidebar-actions button { flex-direction: column; gap: 3px; min-height: 52px; font-size: 11.5px }
+.is-phone .sidebar .inline-form { margin: 0 14px 16px }
+.is-phone .search { margin: 0 14px 8px }
+.is-phone .device-list { padding: 2px 8px 16px }
+.is-phone .candidate-section { margin-top: 8px; padding-bottom: env(safe-area-inset-bottom) }
+.is-phone .phone-alerts { background: var(--surface); overflow: auto; overscroll-behavior: contain; padding: 14px 0 }
+.is-phone .phone-alerts .inline-form { margin: 0 14px; background: transparent; border: 0; padding: 0 }
+.is-phone .react-flow__controls { margin: 14px !important }
+.is-phone .toast-error { right: 12px }
+
+.tabbar { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border-top: 1px solid var(--line); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) }
+.tabbar button { position: relative; height: 56px; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 11px; font-weight: 600; color: var(--text-3); -webkit-tap-highlight-color: transparent }
+.tabbar button svg { padding: 2px 14px; box-sizing: content-box; border-radius: 12px; transition: background-color .15s var(--ease), color .15s var(--ease) }
+.tabbar button[aria-current="page"] { color: var(--text) }
+.tabbar button[aria-current="page"] svg { background: var(--hover) }
+.tabbar button.has-alarms { color: var(--bad-text) }
+.tab-count { position: absolute; top: 5px; left: calc(50% + 10px); min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: var(--line-strong); color: var(--text); font-size: 10.5px; font-weight: 700; line-height: 17px }
+.tab-count.is-alarm { background: var(--bad); color: var(--bg) }
+
+/* Bottom sheet. It sits above the tab bar so the views stay one tap away; the handle toggles
+   between half and full height. */
+.details.is-sheet { position: fixed; z-index: 20; left: 0; right: 0; top: auto; bottom: calc(57px + env(safe-area-inset-bottom)); width: 100%; height: 55dvh; max-height: calc(100% - 120px); padding: 0 16px 18px; border: 0; border-top: 1px solid var(--line-strong); border-radius: 14px 14px 0 0; box-shadow: 0 -12px 40px oklch(8% .01 var(--hue) / .6); overscroll-behavior: contain; animation: sheet-in .28s var(--ease) }
+.details.is-sheet.is-expanded { height: calc(100dvh - 48px - 57px - env(safe-area-inset-bottom) - 8px); max-height: none }
+.details.is-sheet.empty-details { display: none }
+/* The sheet belongs to the map; the selection is kept and the sheet returns with the map tab. */
+.is-phone .workspace:not([data-view="map"]) > .details.is-sheet { display: none }
+/* Landscape phones: every pixel of height goes to the map. */
+@media (max-height: 500px) {
+  .is-phone > .health > * { flex-direction: row; align-items: baseline; gap: 10px; padding: 6px 14px }
+  .is-phone > .health strong { font-size: 16px }
+}
+@keyframes sheet-in { from { transform: translateY(24px); opacity: 0 } }
+.sheet-handle { position: sticky; top: 0; z-index: 2; flex: none; height: 28px; margin: 0 -16px 4px; border: 0; background: var(--surface); display: grid; place-items: center; touch-action: none; -webkit-tap-highlight-color: transparent }
+.sheet-handle i { width: 38px; height: 4px; border-radius: 2px; background: var(--line-strong) }
+.sheet-handle:hover i { background: var(--text-3) }
+.is-sheet .panel-head .icon-button { width: 40px; height: 40px; margin: -6px -8px 0 0 }
+.is-sheet .traffic-pair strong { font-size: 21px }
+.is-sheet .chart-wrap { height: 200px }
+.is-sheet .detail-foot .secondary { min-height: 42px }
+.is-sheet .text-danger { padding: 10px 0 }
+
+/* Touch: fingers need bigger targets than a mouse pointer, and iOS zooms into any field set below 16px. */
+@media (pointer: coarse) {
+  .primary, .secondary { min-height: 42px }
+  .inline-form input, .inline-form select, .search, .login-panel input { height: 44px; font-size: 16px }
+  .search input { font-size: 16px }
+  .login-panel .primary { height: 44px }
+  .inline-form .check { min-height: 32px }
+  .inline-form .check input { width: 20px; height: 20px }
+  .device-list-item { padding: 9px 8px; gap: 12px }
+  .list-device-icon { width: 34px; height: 34px }
+  .device-list-text strong { font-size: 14px }
+  .device-list-text small { font-size: 12px }
+  .candidate { flex-wrap: wrap; padding: 10px }
+  .candidate > div { flex-basis: 100% }
+  .candidate strong { font-size: 13px }
+  .candidate small { font-size: 12px }
+  .candidate button { flex: 1; min-height: 38px; font-size: 12.5px }
+  .dismissed-toggle { min-height: 40px }
+  .port-row { padding: 9px 1px; min-height: 52px }
+  .port-row strong { font-size: 13.5px }
+  .port-row small { font-size: 11.5px }
+  .port-rate { font-size: 12px }
+  .port-alert { width: 40px; height: 40px; margin-right: -6px }
+  .range-tabs button { padding: 7px 12px; font-size: 12px }
+  .alarm-item { min-height: 48px; padding: 9px 10px }
+  .alarm-item strong { font-size: 13.5px }
+  .alarm-item small { font-size: 12px }
+  .react-flow__controls-button { width: 40px; height: 40px }
+  .react-flow__controls-button svg { max-width: 14px; max-height: 14px }
+  .toast-error button { width: 36px; height: 36px }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important }
