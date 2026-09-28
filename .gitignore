@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Go build output
+/trafficflow
+*.test
+*.out
+coverage.*
+
+# Frontend
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+
+# Editor/OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local Claude Code settings
+.claude/settings.local.json

@@ -1,0 +1,547 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-28T09:00:52.344Z",
+  "title": "Design System: Trafficflow",
+  "extensions": {
+    "colorMeta": {
+      "graphite-floor": {
+        "role": "neutral",
+        "displayName": "Graphite Floor",
+        "canonical": "oklch(16.5% .008 165)",
+        "tonalRamp": [
+          "oklch(15% .008 165)",
+          "oklch(25% .008 165)",
+          "oklch(35% .008 165)",
+          "oklch(45% .008 165)",
+          "oklch(55% .008 165)",
+          "oklch(65% .008 165)",
+          "oklch(80% .008 165)",
+          "oklch(95% .008 165)"
+        ]
+      },
+      "panel-graphite": {
+        "role": "neutral",
+        "displayName": "Panel Graphite",
+        "canonical": "oklch(19.5% .009 165)",
+        "tonalRamp": [
+          "oklch(15% .009 165)",
+          "oklch(25% .009 165)",
+          "oklch(35% .009 165)",
+          "oklch(45% .009 165)",
+          "oklch(55% .009 165)",
+          "oklch(65% .009 165)",
+          "oklch(80% .009 165)",
+          "oklch(95% .009 165)"
+        ]
+      },
+      "raised-graphite": {
+        "role": "neutral",
+        "displayName": "Raised Graphite",
+        "canonical": "oklch(23% .01 165)",
+        "tonalRamp": [
+          "oklch(15% .01 165)",
+          "oklch(25% .01 165)",
+          "oklch(35% .01 165)",
+          "oklch(45% .01 165)",
+          "oklch(55% .01 165)",
+          "oklch(65% .01 165)",
+          "oklch(80% .01 165)",
+          "oklch(95% .01 165)"
+        ]
+      },
+      "hover-graphite": {
+        "role": "neutral",
+        "displayName": "Hover Graphite",
+        "canonical": "oklch(27% .011 165)",
+        "tonalRamp": [
+          "oklch(15% .011 165)",
+          "oklch(25% .011 165)",
+          "oklch(35% .011 165)",
+          "oklch(45% .011 165)",
+          "oklch(55% .011 165)",
+          "oklch(65% .011 165)",
+          "oklch(80% .011 165)",
+          "oklch(95% .011 165)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(29% .011 165)",
+        "tonalRamp": [
+          "oklch(15% .011 165)",
+          "oklch(25% .011 165)",
+          "oklch(35% .011 165)",
+          "oklch(45% .011 165)",
+          "oklch(55% .011 165)",
+          "oklch(65% .011 165)",
+          "oklch(80% .011 165)",
+          "oklch(95% .011 165)"
+        ]
+      },
+      "strong-hairline": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "oklch(38% .013 165)",
+        "tonalRamp": [
+          "oklch(15% .013 165)",
+          "oklch(25% .013 165)",
+          "oklch(35% .013 165)",
+          "oklch(45% .013 165)",
+          "oklch(55% .013 165)",
+          "oklch(65% .013 165)",
+          "oklch(80% .013 165)",
+          "oklch(95% .013 165)"
+        ]
+      },
+      "signal-white": {
+        "role": "neutral",
+        "displayName": "Signal White",
+        "canonical": "oklch(93% .008 165)",
+        "tonalRamp": [
+          "oklch(15% .008 165)",
+          "oklch(25% .008 165)",
+          "oklch(35% .008 165)",
+          "oklch(45% .008 165)",
+          "oklch(55% .008 165)",
+          "oklch(65% .008 165)",
+          "oklch(80% .008 165)",
+          "oklch(95% .008 165)"
+        ]
+      },
+      "secondary-text": {
+        "role": "neutral",
+        "displayName": "Secondary Text",
+        "canonical": "oklch(76% .011 165)",
+        "tonalRamp": [
+          "oklch(15% .011 165)",
+          "oklch(25% .011 165)",
+          "oklch(35% .011 165)",
+          "oklch(45% .011 165)",
+          "oklch(55% .011 165)",
+          "oklch(65% .011 165)",
+          "oklch(80% .011 165)",
+          "oklch(95% .011 165)"
+        ]
+      },
+      "quiet-text": {
+        "role": "neutral",
+        "displayName": "Quiet Text",
+        "canonical": "oklch(62% .012 165)",
+        "tonalRamp": [
+          "oklch(15% .012 165)",
+          "oklch(25% .012 165)",
+          "oklch(35% .012 165)",
+          "oklch(45% .012 165)",
+          "oklch(55% .012 165)",
+          "oklch(65% .012 165)",
+          "oklch(80% .012 165)",
+          "oklch(95% .012 165)"
+        ]
+      },
+      "selection-frost": {
+        "role": "tertiary",
+        "displayName": "Selection Frost",
+        "canonical": "oklch(92% .03 200)",
+        "tonalRamp": [
+          "oklch(15% .03 200)",
+          "oklch(25% .03 200)",
+          "oklch(35% .03 200)",
+          "oklch(45% .03 200)",
+          "oklch(55% .03 200)",
+          "oklch(65% .03 200)",
+          "oklch(80% .03 200)",
+          "oklch(95% .03 200)"
+        ]
+      },
+      "focus-ice": {
+        "role": "tertiary",
+        "displayName": "Focus Ice",
+        "canonical": "oklch(82% .09 210)",
+        "tonalRamp": [
+          "oklch(15% .09 210)",
+          "oklch(25% .09 210)",
+          "oklch(35% .09 210)",
+          "oklch(45% .09 210)",
+          "oklch(55% .09 210)",
+          "oklch(65% .09 210)",
+          "oklch(80% .09 210)",
+          "oklch(95% .09 210)"
+        ]
+      },
+      "alive-green": {
+        "role": "secondary",
+        "displayName": "Alive Green",
+        "canonical": "oklch(74% .15 150)",
+        "tonalRamp": [
+          "oklch(15% .15 150)",
+          "oklch(25% .15 150)",
+          "oklch(35% .15 150)",
+          "oklch(45% .15 150)",
+          "oklch(55% .15 150)",
+          "oklch(65% .15 150)",
+          "oklch(80% .15 150)",
+          "oklch(95% .15 150)"
+        ]
+      },
+      "fault-red": {
+        "role": "secondary",
+        "displayName": "Fault Red",
+        "canonical": "oklch(67% .2 27)",
+        "tonalRamp": [
+          "oklch(15% .2 27)",
+          "oklch(25% .2 27)",
+          "oklch(35% .2 27)",
+          "oklch(45% .2 27)",
+          "oklch(55% .2 27)",
+          "oklch(65% .2 27)",
+          "oklch(80% .2 27)",
+          "oklch(95% .2 27)"
+        ]
+      },
+      "fault-text": {
+        "role": "secondary",
+        "displayName": "Fault Text",
+        "canonical": "oklch(78% .13 27)",
+        "tonalRamp": [
+          "oklch(15% .13 27)",
+          "oklch(25% .13 27)",
+          "oklch(35% .13 27)",
+          "oklch(45% .13 27)",
+          "oklch(55% .13 27)",
+          "oklch(65% .13 27)",
+          "oklch(80% .13 27)",
+          "oklch(95% .13 27)"
+        ]
+      },
+      "fault-surface": {
+        "role": "secondary",
+        "displayName": "Fault Surface",
+        "canonical": "oklch(26% .05 27)",
+        "tonalRamp": [
+          "oklch(15% .05 27)",
+          "oklch(25% .05 27)",
+          "oklch(35% .05 27)",
+          "oklch(45% .05 27)",
+          "oklch(55% .05 27)",
+          "oklch(65% .05 27)",
+          "oklch(80% .05 27)",
+          "oklch(95% .05 27)"
+        ]
+      },
+      "fault-line": {
+        "role": "secondary",
+        "displayName": "Fault Line",
+        "canonical": "oklch(42% .11 27)",
+        "tonalRamp": [
+          "oklch(15% .11 27)",
+          "oklch(25% .11 27)",
+          "oklch(35% .11 27)",
+          "oklch(45% .11 27)",
+          "oklch(55% .11 27)",
+          "oklch(65% .11 27)",
+          "oklch(80% .11 27)",
+          "oklch(95% .11 27)"
+        ]
+      },
+      "stale-amber": {
+        "role": "tertiary",
+        "displayName": "Stale Amber",
+        "canonical": "oklch(84% .14 88)",
+        "tonalRamp": [
+          "oklch(15% .14 88)",
+          "oklch(25% .14 88)",
+          "oklch(35% .14 88)",
+          "oklch(45% .14 88)",
+          "oklch(55% .14 88)",
+          "oklch(65% .14 88)",
+          "oklch(80% .14 88)",
+          "oklch(95% .14 88)"
+        ]
+      },
+      "load-idle": {
+        "role": "primary",
+        "displayName": "Load Idle",
+        "canonical": "oklch(56% .04 175)",
+        "tonalRamp": [
+          "oklch(15% .04 175)",
+          "oklch(25% .04 175)",
+          "oklch(35% .04 175)",
+          "oklch(45% .04 175)",
+          "oklch(55% .04 175)",
+          "oklch(65% .04 175)",
+          "oklch(80% .04 175)",
+          "oklch(95% .04 175)"
+        ]
+      },
+      "load-light": {
+        "role": "primary",
+        "displayName": "Load Light",
+        "canonical": "oklch(74% .12 170)",
+        "tonalRamp": [
+          "oklch(15% .12 170)",
+          "oklch(25% .12 170)",
+          "oklch(35% .12 170)",
+          "oklch(45% .12 170)",
+          "oklch(55% .12 170)",
+          "oklch(65% .12 170)",
+          "oklch(80% .12 170)",
+          "oklch(95% .12 170)"
+        ]
+      },
+      "load-half": {
+        "role": "primary",
+        "displayName": "Load Half",
+        "canonical": "oklch(84% .15 100)",
+        "tonalRamp": [
+          "oklch(15% .15 100)",
+          "oklch(25% .15 100)",
+          "oklch(35% .15 100)",
+          "oklch(45% .15 100)",
+          "oklch(55% .15 100)",
+          "oklch(65% .15 100)",
+          "oklch(80% .15 100)",
+          "oklch(95% .15 100)"
+        ]
+      },
+      "load-heavy": {
+        "role": "primary",
+        "displayName": "Load Heavy",
+        "canonical": "oklch(75% .17 58)",
+        "tonalRamp": [
+          "oklch(15% .17 58)",
+          "oklch(25% .17 58)",
+          "oklch(35% .17 58)",
+          "oklch(45% .17 58)",
+          "oklch(55% .17 58)",
+          "oklch(65% .17 58)",
+          "oklch(80% .17 58)",
+          "oklch(95% .17 58)"
+        ]
+      },
+      "load-full": {
+        "role": "primary",
+        "displayName": "Load Full",
+        "canonical": "oklch(66% .21 27)",
+        "tonalRamp": [
+          "oklch(15% .21 27)",
+          "oklch(25% .21 27)",
+          "oklch(35% .21 27)",
+          "oklch(45% .21 27)",
+          "oklch(55% .21 27)",
+          "oklch(65% .21 27)",
+          "oklch(80% .21 27)",
+          "oklch(95% .21 27)"
+        ]
+      },
+      "chart-in-sky": {
+        "role": "primary",
+        "displayName": "Chart In Sky",
+        "canonical": "oklch(80% .09 225)",
+        "tonalRamp": [
+          "oklch(15% .09 225)",
+          "oklch(25% .09 225)",
+          "oklch(35% .09 225)",
+          "oklch(45% .09 225)",
+          "oklch(55% .09 225)",
+          "oklch(65% .09 225)",
+          "oklch(80% .09 225)",
+          "oklch(95% .09 225)"
+        ]
+      },
+      "chart-out-sand": {
+        "role": "primary",
+        "displayName": "Chart Out Sand",
+        "canonical": "oklch(82% .1 78)",
+        "tonalRamp": [
+          "oklch(15% .1 78)",
+          "oklch(25% .1 78)",
+          "oklch(35% .1 78)",
+          "oklch(45% .1 78)",
+          "oklch(55% .1 78)",
+          "oklch(65% .1 78)",
+          "oklch(80% .1 78)",
+          "oklch(95% .1 78)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "data": {
+        "displayName": "Data",
+        "purpose": "Health strip and detail-panel rates; the numbers read from a distance."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Name of the selected device or link."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "List rows, node names, form fields, port names."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, counts, metadata, legend."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "IP addresses, DNS names and SNMP error text."
+      }
+    },
+    "shadows": [
+      {
+        "name": "overlay-side",
+        "value": "-12px 0 32px oklch(8% .01 165 / .5)",
+        "purpose": "Detail panel overlaying the map at ≤900px."
+      },
+      {
+        "name": "overlay-sheet",
+        "value": "0 -12px 40px oklch(8% .01 165 / .6)",
+        "purpose": "Detail panel as a bottom sheet at ≤620px."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out-quint",
+        "value": "cubic-bezier(.22, 1, .36, 1)",
+        "purpose": "All state transitions (150ms for hover/border, 300ms for link stroke colour)."
+      },
+      {
+        "name": "breathe",
+        "value": "1.4s alternate",
+        "purpose": "Live indicator pulse; disabled under prefers-reduced-motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "1200px"
+      },
+      {
+        "name": "overlay",
+        "value": "900px"
+      },
+      {
+        "name": "phone",
+        "value": "620px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one inverted element in a panel: the main action.",
+      "html": "<button class=\"ds-btn-primary\">Lägg till enhet</button>",
+      "css": ".ds-btn-primary{background:oklch(93% .008 165);color:oklch(16.5% .008 165);border:1px solid oklch(93% .008 165);border-radius:7px;height:34px;padding:7px 12px;font:650 12.5px Inter,system-ui,sans-serif;cursor:pointer;transition:background-color .15s cubic-bezier(.22,1,.36,1)}.ds-btn-primary:hover{background:oklch(84% .01 165)}.ds-btn-primary:focus-visible{outline:2px solid oklch(82% .09 210);outline-offset:2px}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Supporting actions: new link, new cloud, sort map, edit.",
+      "html": "<button class=\"ds-btn-secondary\">Sortera karta</button>",
+      "css": ".ds-btn-secondary{background:oklch(23% .01 165);color:oklch(93% .008 165);border:1px solid oklch(29% .011 165);border-radius:7px;height:34px;padding:7px 12px;font:650 12.5px Inter,system-ui,sans-serif;cursor:pointer;transition:background-color .15s,border-color .15s}.ds-btn-secondary:hover{background:oklch(27% .011 165);border-color:oklch(38% .013 165)}.ds-btn-secondary:focus-visible{outline:2px solid oklch(82% .09 210);outline-offset:2px}"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Field sunk into a panel.",
+      "html": "<input class=\"ds-input\" placeholder=\"192.168.1.1 eller switch1.example.lan\">",
+      "css": ".ds-input{background:oklch(16.5% .008 165);color:oklch(93% .008 165);border:1px solid oklch(29% .011 165);border-radius:6px;height:34px;padding:0 9px;font:400 12.5px Inter,system-ui,sans-serif;width:260px}.ds-input::placeholder{color:oklch(62% .012 165)}.ds-input:hover{border-color:oklch(38% .013 165)}.ds-input:focus-visible{outline:2px solid oklch(82% .09 210);outline-offset:2px}"
+    },
+    {
+      "name": "Map Node",
+      "kind": "card",
+      "refersTo": "map-node",
+      "description": "A switch on the map: icon tile with status dot, name, kind and address, inbound rate.",
+      "html": "<div class=\"ds-node\"><div class=\"ds-node-head\"><span class=\"ds-node-icon\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"2\" y=\"5\" width=\"20\" height=\"14\" rx=\"2.5\"/><path d=\"M6 9.5h12M15.5 7.5l2.5 2-2.5 2M18 14.5H6M8.5 12.5 6 14.5l2.5 2\"/></svg><i></i></span><strong>FISHWAY-CORE-01</strong></div><div class=\"ds-node-meta\">Switch · <span class=\"ds-mono\">10.10.2.2</span></div><div class=\"ds-node-rate\">↓ 38.9 Mbit/s</div></div>",
+      "css": ".ds-node{width:176px;padding:9px 11px 10px;background:oklch(19.5% .009 165);border:1px solid oklch(38% .013 165);border-radius:8px;display:flex;flex-direction:column;gap:5px;color:oklch(93% .008 165);font-family:Inter,system-ui,sans-serif;transition:border-color .15s}.ds-node:hover{border-color:oklch(52% .014 165)}.ds-node-head{display:flex;align-items:center;gap:8px}.ds-node-head strong{font-size:12.5px;font-weight:650}.ds-node-icon{position:relative;width:26px;height:26px;border-radius:6px;display:grid;place-items:center;background:oklch(23% .01 165)}.ds-node-icon i{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:oklch(74% .15 150);box-shadow:0 0 0 2px oklch(19.5% .009 165)}.ds-node-meta{font-size:10.5px;color:oklch(62% .012 165)}.ds-mono{font-family:ui-monospace,Menlo,monospace}.ds-node-rate{font-size:11.5px;font-weight:600;color:oklch(76% .011 165);font-variant-numeric:tabular-nums}"
+    },
+    {
+      "name": "Offline Node",
+      "kind": "card",
+      "refersTo": "map-node-offline",
+      "description": "A device that does not answer.",
+      "html": "<div class=\"ds-node-off\"><strong>AXNET-CUST-09</strong><span>Switch · axnet-cust-09</span><em>⚠ Svarar inte</em></div>",
+      "css": ".ds-node-off{width:176px;padding:9px 11px 10px;background:oklch(26% .05 27);border:1px solid oklch(42% .11 27);border-radius:8px;display:flex;flex-direction:column;gap:5px;font-family:Inter,system-ui,sans-serif;color:oklch(93% .008 165)}.ds-node-off strong{font-size:12.5px}.ds-node-off span{font-size:10.5px;color:oklch(62% .012 165)}.ds-node-off em{font-style:normal;font-size:11.5px;font-weight:600;color:oklch(78% .13 27)}"
+    },
+    {
+      "name": "Edge Chip",
+      "kind": "chip",
+      "refersTo": "edge-chip",
+      "description": "Rates and load meter at the lower end of a link.",
+      "html": "<div class=\"ds-chip\"><span>↓ 650 Mbit/s</span><span>↑ 130 Mbit/s</span><span class=\"ds-load\"><b><i></i></b>65 %</span></div>",
+      "css": ".ds-chip{display:inline-grid;gap:1px;padding:4px 7px 5px;border-radius:6px;background:oklch(19.5% .009 165 / .95);border:1px solid oklch(29% .011 165);font:600 10.5px/1.35 Inter,system-ui,sans-serif;color:oklch(93% .008 165);font-variant-numeric:tabular-nums}.ds-load{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:10px;font-weight:400;color:oklch(62% .012 165)}.ds-load b{display:block;width:60px;height:4px;border-radius:2px;background:oklch(29% .011 165);overflow:hidden}.ds-load i{display:block;width:65%;height:100%;background:oklch(75% .17 58)}"
+    },
+    {
+      "name": "Health Strip",
+      "kind": "nav",
+      "refersTo": "health-strip",
+      "description": "Sidebar header: answering devices, links up, busiest link.",
+      "html": "<div class=\"ds-health\"><div><span>Svarar</span><strong>14<small>/15</small></strong></div><div><span>Länkar uppe</span><strong>15<small>/15</small></strong></div><button><span>Högst last</span><strong>92 %</strong></button></div>",
+      "css": ".ds-health{display:grid;grid-template-columns:repeat(3,96px);background:oklch(19.5% .009 165);border:1px solid oklch(29% .011 165);font-family:Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}.ds-health>*{display:flex;flex-direction:column;gap:3px;padding:12px;background:none;border:0;text-align:left;color:oklch(93% .008 165)}.ds-health>*+*{border-left:1px solid oklch(29% .011 165)}.ds-health span{font-size:11px;color:oklch(62% .012 165)}.ds-health strong{font-size:20px;font-weight:650}.ds-health small{font-size:12px;color:oklch(62% .012 165);font-weight:500}.ds-health div:first-child strong{color:oklch(78% .13 27)}.ds-health button strong{color:oklch(66% .21 27)}.ds-health button{cursor:pointer}.ds-health button:hover{background:oklch(23% .01 165)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Nattskiftet",
+    "overview": "An operations room late in the evening. The lights are down, the wall screen glows softly, and nothing asks for attention until something breaks. Trafficflow is built for that room: a graphite surface with a faint green cast, neutral text, thin hairlines, and a map that stays quiet while the network is healthy. Colour is an alarm system, not decoration. When a link fills up it warms from muted sea-grey through yellow to red; when a device stops answering it turns red and moves to the top of every list.\n\nThe system is dense and matter-of-fact. It is a tool for people who read MAC tables and port names, so it shows names, addresses and rates first, in small precise type, and puts nothing between them and the topology. Panels support the map and never crowd it. Every element on the map encodes network state; nothing is there for flavour.\n\nIt rejects anything that makes a healthy network look alarming, anything that hides the topology behind panels, and the familiar dark-dashboard reflex of navy backgrounds with neon accents.",
+    "keyCharacteristics": [
+      "Dark graphite (hue 165, chroma ≤ .013) for every neutral; no pure black, no pure white.",
+      "Colour only for load, faults, liveness and selection.",
+      "Flat tonal layers instead of shadows.",
+      "Small, dense, tabular type; mono for addresses and error text.",
+      "Equipment drawn in network-diagram notation: router, switch, cloud."
+    ],
+    "rules": [
+      {
+        "name": "The Alarm-Only Rule",
+        "body": "Colour is spent on load, faults, liveness and selection. If a colour appears and nothing is wrong, busy, alive or selected, remove it.",
+        "section": "colors"
+      },
+      {
+        "name": "The Calm Floor Rule",
+        "body": "Links at 0–20 % use load-idle. A healthy network must be readable as \"nothing to see\" from across the room.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Red Rule",
+        "body": "Fault red means down or failing. Never use it for emphasis, branding or a \"high\" state that is not a fault; load-full shares its hue only because a full link is a fault in waiting.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number is set with tabular figures. A rate that shifts width on each refresh is a bug.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Eyebrow Rule",
+        "body": "No uppercase, letter-spaced kicker labels above headings. The kind of thing (Router, Switch, Moln, Länk #4) is a plain 11px label.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal Step Rule",
+        "body": "To lift something, move it one step up the graphite ramp. If you reach for a shadow on a resting element, the ramp step is wrong.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep every neutral on hue 165 with chroma ≤ .013, and every colour in OKLCH.",
+      "Do colour a link only through the load scale, fault red (down, dashed 5 5) or selection frost.",
+      "Do put the most important state first: offline devices at the top of lists, the busiest link in the health strip.",
+      "Do use tabular figures for every rate, count and time.",
+      "Do draw routers, switches and clouds with the equipment icons, never generic app icons.",
+      "Do open forms inline and keep the map visible while working."
+    ],
+    "donts": [
+      "Don't make a healthy network look alarming: no vivid green for idle links, no red for anything that is not a fault.",
+      "Don't hide the topology behind panels, overlays or modals on desktop widths.",
+      "Don't use navy backgrounds with neon accents; that is the dark-dashboard reflex this system avoids.",
+      "Don't use border-left or border-right wider than 1px as a coloured accent on chips, cards, list items or alerts. Use the load meter or a full border.",
+      "Don't use gradient text, glassmorphism or decorative shadows on resting elements.",
+      "Don't use uppercase letter-spaced eyebrow labels.",
+      "Don't use #000 or #fff; the extremes are graphite-floor and signal-white."
+    ]
+  }
+}

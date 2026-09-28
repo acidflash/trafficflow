@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      APP_KEY: ${APP_KEY:?Set APP_KEY in .env}
+      DATABASE_PATH: /data/trafficflow.db
+      TZ: ${TZ:-Europe/Stockholm}
+    volumes:
+      - app_data:/data
+    restart: unless-stopped
+  proxy:
+    image: caddy:2
+    ports:
+      - "443:443"
+    environment:
+      HTTPS_HOST: ${HTTPS_HOST:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+volumes:
+  app_data:
+  caddy_data:
+  caddy_config:
