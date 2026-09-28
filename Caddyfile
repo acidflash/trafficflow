@@ -1,9 +1,0 @@
-{
-    # Browsers send no SNI when connecting to an IP address.
-    default_sni {$HTTPS_HOST}
-}
-
-{$HTTPS_HOST} {
-    tls internal
-    reverse_proxy app:8080
-}

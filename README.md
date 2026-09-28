@@ -7,10 +7,19 @@ Intern nätverkskarta för MikroTik RouterOS 7 och SwOS. Appen läser portstatus
 1. Kopiera `.env.example` till `.env`.
 2. Sätt `ADMIN_PASSWORD` till ett unikt lösenord med minst 10 tecken.
 3. Skapa `APP_KEY` med `openssl rand -base64 32` och lägg värdet i `.env`. Spara nyckeln tillsammans med databasbackup; utan den går sparade SNMP-uppgifter inte att dekryptera.
-4. Sätt `HTTPS_HOST` till serverns LAN-IP-adress. Caddy skapar då ett internt TLS-certifikat för adressen.
-5. Kör `docker compose up --build -d` och öppna `https://<serverns IP>/`.
+4. Kör `docker compose up --build -d`. Appen lyssnar med okrypterad HTTP på port 8080 på alla nätverksgränssnitt.
+5. Peka Cloudflare Tunnel på `http://<serverns IP>:8080` och öppna appen via tunnelns publika värdnamn.
 
-För att webbläsaren ska lita på certifikatet, exportera Caddys lokala rotcertifikat med `docker compose exec -T proxy cat /data/caddy/pki/authorities/local/root.crt > trafficflow-root.crt` och installera det i administratörernas betrodda rotcertifikat. Skydda filen och gör detta bara på administratörernas datorer.
+Appen förutsätter att TLS sköts av Cloudflare Tunnel. Sessionscookien kräver HTTPS, så inloggning direkt via `http://<serverns IP>:8080` fungerar inte. Låt cloudflared skicka vidare det publika värdnamnet som `Host` (sätt inte `httpHostHeader`), annars avvisas ändringar med "Ogiltigt ursprung". Lägg gärna Cloudflare Access framför appen.
+
+Begränsa port 8080 i brandväggen så att bara cloudflared-maskinen når den. Docker publicerar portar förbi `ufw` och INPUT-kedjan, så regeln måste ligga i kedjan `DOCKER-USER`, till exempel:
+
+```sh
+iptables -I DOCKER-USER -i eth0 -p tcp --dport 8080 -j DROP
+iptables -I DOCKER-USER -i eth0 -p tcp --dport 8080 -s <cloudflared-IP> -j ACCEPT
+```
+
+Gör reglerna beständiga med till exempel `iptables-persistent`.
 
 Appen behöver åtkomst från servern till enheternas UDP-port 161. Registrera enheterna i webbappen med IP-adress eller DNS-namn. DNS-namn slås upp från appservern vid varje avläsning, så ändrade DNS-poster följs automatiskt. På RouterOS behövs SNMPv3 med kryptering: skapa en community med `security=private`, `authentication-protocol=SHA1` och `encryption-protocol=AES` (RouterOS standard är MD5 och DES), lösenord på minst åtta tecken och `addresses` satt till appserverns IP-adress. Communityns namn är SNMPv3-användaren. Välj samma autentiseringsprotokoll i appen. RouterOS kan även läsas med SNMPv2c, men då skickas community och data okrypterat i nätet, så använd det bara om v3 inte går. På SwOS behöver SNMPv2c vara aktiverat med en unik community. Begränsa SNMP-åtkomsten till appserverns IP-adress i nätet. För automatiska länkförslag måste LLDP vara aktivt på de berörda RouterOS-portarna. SwOS-switchar kopplas ihop automatiskt via MAC-tabellerna.
 
@@ -37,6 +46,6 @@ Appen behöver åtkomst från servern till enheternas UDP-port 161. Registrera e
 
 ## Backup och drift
 
-Databasen ligger i Docker-volymen `app_data`. Säkerhetskopiera volymen tillsammans med `APP_KEY`. Caddys lokala certifikatmyndighet ligger i `caddy_data`; behåll den volymen för att undvika certifikatbyte. Administratörskontot skapas vid första start med användarnamnet `admin` och lösenordet i `.env`.
+Databasen ligger i Docker-volymen `app_data`. Säkerhetskopiera volymen tillsammans med `APP_KEY`. Administratörskontot skapas vid första start med användarnamnet `admin` och lösenordet i `.env`.
 
 Utveckling: `npm install && npm run build` i `web/`, följt av `go test ./...` och `go run .` i projektroten. Go 1.24 och Node 22 krävs. Vid lokal utveckling behövs samma `APP_KEY`, `ADMIN_PASSWORD` och `DATABASE_PATH` som i Compose.
