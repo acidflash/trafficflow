@@ -8,12 +8,12 @@ export type Positions = Map<number, { x: number; y: number }>
 // arrangeMap lays out the network as a top-down tree. Each connected group starts at its root:
 // the RouterOS device with most links, otherwise the device with most links. Only the tree edges
 // shape the layout, so redundant links do not tangle it. Clouds (external networks) are kept out
-// of the tree and placed one level above the devices they connect to. Devices without links go
-// in rows below.
+// of the tree and placed one level above the devices they connect to; servers are ordinary tree
+// nodes and so end up below their switch. Devices without links go in rows below.
 export function arrangeMap(devices: Device[], interfaces: Interface[], links: Link[]): Positions {
   const byId = new Map(devices.map(d => [d.id, d]))
   const deviceOf = new Map(interfaces.map(i => [i.id, i.deviceId]))
-  const isCloud = (id: number) => byId.get(id)!.os === 'external'
+  const isCloud = (id: number) => byId.get(id)!.os === 'external' && byId.get(id)!.kind !== 'server'
   const neighbours = new Map(devices.map(d => [d.id, new Set<number>()]))
   const cloudLinks = new Map(devices.map(d => [d.id, new Set<number>()]))
   for (const link of links) {

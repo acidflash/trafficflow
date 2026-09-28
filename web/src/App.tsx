@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ReactFlow, Background, BaseEdge, Controls, EdgeLabelRenderer, getSmoothStepPath, Handle, Position, useNodesState, useStore, type Edge, type EdgeProps, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react'
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, BellOff, BellRing, Cable, ChevronRight, Clock3, Cloud, LogOut, MousePointerClick, Network, Pencil, Plus, RefreshCw, Search, Send, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, BellOff, BellRing, Cable, ChevronRight, Clock3, Cloud, LogOut, MousePointerClick, Network, Pencil, Plus, RefreshCw, Search, Send, Server, Trash2, X } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import '@xyflow/react/dist/style.css'
 import { arrangeMap } from './layout'
@@ -8,8 +8,8 @@ import { DeviceIcon, TopologyMark, deviceKind } from './icons'
 import { api, type Alarm, type AlertSettings, type Candidate, type DismissedCandidate, type Device, type Interface, type Point, type Topology } from './api'
 
 type Selection = { kind: 'device' | 'link'; id: number } | null
-type CloudTraffic = { inbound: number | null; outbound: number | null; capacity: number }
-type NetworkNode = Node<{ device: Device; traffic: number | null; cloud?: CloudTraffic }>
+type ExternalTraffic = { inbound: number | null; outbound: number | null; capacity: number }
+type NetworkNode = Node<{ device: Device; traffic: number | null; external?: ExternalTraffic }>
 
 function formatRate(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return '–'
@@ -19,7 +19,9 @@ function formatRate(value: number | null | undefined) {
   return `${n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2)} ${units[unit]}`
 }
 function formatTime(value: number | null | undefined) { return value ? new Date(value * 1000).toLocaleString('sv-SE') : 'Ingen mätning' }
-function addressLabel(device: Device | undefined) { if (device?.os === 'external') return 'Extern operatör'; return device && device.resolved && device.resolved !== device.address ? `${device.address} (${device.resolved})` : device?.address }
+const isServer = (device: Device | undefined) => device?.os === 'external' && device.kind === 'server'
+function externalLabel(device: Device) { return isServer(device) ? 'Server utan SNMP' : 'Extern operatör' }
+function addressLabel(device: Device | undefined) { if (device?.os === 'external') return externalLabel(device); return device && device.resolved && device.resolved !== device.address ? `${device.address} (${device.resolved})` : device?.address }
 
 // Load bands of 20 %. The lowest band is deliberately muted: a healthy network should look calm,
 // and colour should only draw the eye as a link fills up.
@@ -35,17 +37,20 @@ const chartIn = 'oklch(80% .09 225)', chartOut = 'oklch(82% .1 78)'
 function loadColor(load: number | null) { return load == null ? noDataColor : loadBands.find(b => Math.round(load) <= b.max)!.color }
 
 function NetworkDevice({ data, selected }: NodeProps<NetworkNode>) {
-  const { device, traffic, cloud } = data
+  const { device, traffic, external } = data
+  const server = isServer(device)
   const offline = device.status === 'offline'
   return <div className={`node node-${device.os} ${offline ? 'is-offline' : ''} ${selected ? 'is-selected' : ''}`}>
     <Handle type="target" position={Position.Top} className="flow-handle" />
     <div className="node-head">
-      <span className="node-icon"><DeviceIcon os={device.os} size={17}/>{device.os !== 'external' && <span className={`status-dot ${device.status}`}/>}</span>
+      <span className="node-icon"><DeviceIcon device={device} size={17}/>{device.os !== 'external' && <span className={`status-dot ${device.status}`}/>}</span>
       <strong title={device.name}>{device.name}</strong>
     </div>
-    <div className="node-meta"><span>{deviceKind(device.os)}</span>{cloud ? cloud.capacity > 0 && <span>avtal {formatRate(cloud.capacity)}</span> : <span className="mono" title={addressLabel(device)}>{device.address}</span>}</div>
-    <div className="node-rate">{offline ? <span className="node-fault"><AlertTriangle size={12}/> Svarar inte</span> : cloud
-      ? <><span title="In till nätet">↓ {formatRate(cloud.inbound)}</span><span title="Ut från nätet">↑ {formatRate(cloud.outbound)}</span></>
+    <div className="node-meta"><span>{deviceKind(device)}</span>{external ? external.capacity > 0 && <span>{server ? 'nätkort' : 'avtal'} {formatRate(external.capacity)}</span> : <span className="mono" title={addressLabel(device)}>{device.address}</span>}</div>
+    <div className="node-rate">{offline ? <span className="node-fault"><AlertTriangle size={12}/> Svarar inte</span> : external
+      ? server
+        ? <><span title="Till servern">↓ {formatRate(external.outbound)}</span><span title="Från servern">↑ {formatRate(external.inbound)}</span></>
+        : <><span title="In till nätet">↓ {formatRate(external.inbound)}</span><span title="Ut från nätet">↑ {formatRate(external.outbound)}</span></>
       : <span title="Mottaget på alla portar">↓ {formatRate(traffic)}</span>}</div>
     <Handle type="source" position={Position.Bottom} className="flow-handle" />
   </div>
@@ -75,8 +80,8 @@ function TrafficEdgeView({ id, sourceX, sourceY, sourcePosition, targetX, target
 }
 const edgeTypes = { traffic: TrafficEdgeView }
 
-// Traffic of a cloud, from the real ports linked to it: inbound is what our side receives.
-function cloudTraffic(topology: Topology, device: Device): CloudTraffic {
+// Traffic of a cloud or server, from the real ports linked to it: inbound is what our side receives.
+function externalTraffic(topology: Topology, device: Device): ExternalTraffic {
   const port = topology.interfaces.find(i => i.deviceId === device.id)
   let inbound: number | null = null, outbound: number | null = null
   for (const link of topology.links) {
@@ -93,19 +98,20 @@ function FormTitle({ title, onCancel }: { title: string; onCancel: () => void })
   return <div className="form-title"><strong>{title}</strong><button type="button" className="icon-button" onClick={onCancel} aria-label="Stäng"><X size={16}/></button></div>
 }
 
-function CloudForm({ cloud, capacity, onDone, onCancel }: { cloud?: Device; capacity?: number; onDone: () => void; onCancel: () => void }) {
-  const [name, setName] = useState(cloud?.name || ''), [mbit, setMbit] = useState(capacity ? String(capacity / 1e6) : ''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+function ExternalForm({ kind, device, capacity, onDone, onCancel }: { kind: 'cloud' | 'server'; device?: Device; capacity?: number; onDone: () => void; onCancel: () => void }) {
+  const [name, setName] = useState(device?.name || ''), [mbit, setMbit] = useState(capacity ? String(capacity / 1e6) : ''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  const server = kind === 'server', noun = server ? 'server' : 'moln'
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
-    const body = JSON.stringify({ name, capacityBps: mbit.trim() ? Math.round(Number(mbit) * 1e6) : 0 })
-    try { await api(cloud ? `/externals/${cloud.id}` : '/externals', { method: cloud ? 'PATCH' : 'POST', body }); onDone() }
+    const body = JSON.stringify({ name, kind, capacityBps: mbit.trim() ? Math.round(Number(mbit) * 1e6) : 0 })
+    try { await api(device ? `/externals/${device.id}` : '/externals', { method: device ? 'PATCH' : 'POST', body }); onDone() }
     catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
-  return <form className="inline-form" onSubmit={submit}><FormTitle title={cloud ? 'Redigera moln' : 'Nytt moln'} onCancel={onCancel}/>
-    <label>Operatör<input value={name} onChange={e => setName(e.target.value)} placeholder="T.ex. Arelion, Telia eller IX-namn" maxLength={64} required /></label>
-    <label>Avtalad kapacitet, Mbit/s (valfritt)<input value={mbit} onChange={e => setMbit(e.target.value)} type="number" min={0} step="any" inputMode="decimal" placeholder="Tomt = portens hastighet" /></label>
-    {!cloud && <p className="muted">Koppla sedan molnet till routerns port med Ny länk. Trafiken mäts på routerns port.</p>}
-    {error && <div className="form-error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Sparar…' : cloud ? 'Spara ändringar' : 'Skapa moln'}</button>
+  return <form className="inline-form" onSubmit={submit}><FormTitle title={device ? `Redigera ${noun}` : server ? 'Ny server' : 'Nytt moln'} onCancel={onCancel}/>
+    <label>{server ? 'Namn' : 'Operatör'}<input value={name} onChange={e => setName(e.target.value)} placeholder={server ? 'T.ex. fil-01 eller backup' : 'T.ex. Arelion, Telia eller IX-namn'} maxLength={64} required /></label>
+    <label>{server ? 'Nätkortets hastighet' : 'Avtalad kapacitet'}, Mbit/s (valfritt)<input value={mbit} onChange={e => setMbit(e.target.value)} type="number" min={0} step="any" inputMode="decimal" placeholder="Tomt = portens hastighet" /></label>
+    {!device && <p className="muted">{server ? 'Koppla sedan servern till switchporten med Ny länk. Trafiken mäts på switchporten.' : 'Koppla sedan molnet till routerns port med Ny länk. Trafiken mäts på routerns port.'}</p>}
+    {error && <div className="form-error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Sparar…' : device ? 'Spara ändringar' : server ? 'Skapa server' : 'Skapa moln'}</button>
   </form>
 }
 
@@ -235,16 +241,21 @@ function DetailPanel({ topology, selection, onClose, onDelete, onSaved, onError 
   async function remove(kind: 'devices' | 'links', id: number) { if (!window.confirm(kind === 'devices' ? 'Ta bort enheten och dess länkar?' : 'Ta bort länken?')) return; try { await api(`/${kind}/${id}`, { method: 'DELETE' }); onDelete() } catch (e) { onError((e as Error).message) } }
   const fresh = (i: Interface) => i.lastSample != null && topology.serverTime - i.lastSample <= 45
   if (device?.os === 'external') {
-    const port = topology.interfaces.find(i => i.deviceId === device.id), traffic = cloudTraffic(topology, device)
+    const port = topology.interfaces.find(i => i.deviceId === device.id), traffic = externalTraffic(topology, device)
+    const server = isServer(device), noun = server ? 'server' : 'moln', kind = server ? 'server' : 'cloud'
     const peers = topology.links.flatMap(l => { const peerId = l.aInterfaceId === port?.id ? l.bInterfaceId : l.bInterfaceId === port?.id ? l.aInterfaceId : null; const peer = topology.interfaces.find(i => i.id === peerId); return peer ? [{ link: l, peer, owner: topology.devices.find(d => d.id === peer.deviceId) }] : [] })
     return <aside className="details">
-      <PanelHead kind="Moln" icon={<Cloud size={20} strokeWidth={1.7}/>} title={device.name} subtitle="Extern operatör" onClose={onClose}/>
-      {editing && <CloudForm key={device.id} cloud={device} capacity={port?.speedBps} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onSaved() }}/>}
-      <div className="traffic-pair"><div><span><ArrowDownRight size={14}/> In till nätet</span><strong>{formatRate(traffic.inbound)}</strong></div><div><span><ArrowUpRight size={14}/> Ut från nätet</span><strong>{formatRate(traffic.outbound)}</strong></div></div>
-      <dl className="facts"><div><dt>Avtalad kapacitet</dt><dd>{port?.speedBps ? formatRate(port.speedBps) : 'Portens hastighet'}</dd></div></dl>
+      <PanelHead kind={deviceKind(device)} icon={<DeviceIcon device={device} size={20}/>} title={device.name} subtitle={externalLabel(device)} onClose={onClose}/>
+      {editing && <ExternalForm key={device.id} kind={kind} device={device} capacity={port?.speedBps} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onSaved() }}/>}
+      {server
+        ? <div className="traffic-pair"><div><span><ArrowDownRight size={14}/> Till servern</span><strong>{formatRate(traffic.outbound)}</strong></div><div><span><ArrowUpRight size={14}/> Från servern</span><strong>{formatRate(traffic.inbound)}</strong></div></div>
+        : <div className="traffic-pair"><div><span><ArrowDownRight size={14}/> In till nätet</span><strong>{formatRate(traffic.inbound)}</strong></div><div><span><ArrowUpRight size={14}/> Ut från nätet</span><strong>{formatRate(traffic.outbound)}</strong></div></div>}
+      <dl className="facts"><div><dt>{server ? 'Nätkortets hastighet' : 'Avtalad kapacitet'}</dt><dd>{port?.speedBps ? formatRate(port.speedBps) : server ? 'Switchportens hastighet' : 'Portens hastighet'}</dd></div></dl>
       <div className="section-heading"><h3>Anslutningar</h3><span>{peers.length}</span></div>
-      {peers.length ? <div className="port-list">{peers.map(({ link, peer, owner }) => <div className="port-row" key={link.id}><span className={`status-dot ${peer.status}`}/><div><strong>{owner?.name || 'Okänd'} / {peer.name}</strong><small>{formatRate(peer.speedBps)}</small></div><div className="port-rate">{fresh(peer) ? formatRate(peer.rxBps) : '–'}<small>in</small></div></div>)}</div> : <p className="muted">Inte kopplat ännu. Använd Ny länk och välj {device.name} / Anslutning mot routerns port.</p>}
-      <div className="detail-foot">{!editing && <button className="secondary" onClick={() => setEditing(true)}><Pencil size={15}/> Redigera moln</button>}<button className="text-danger" onClick={() => remove('devices', device.id)}><Trash2 size={15}/> Ta bort moln</button></div>
+      {peers.length ? <div className="port-list">{peers.map(({ link, peer, owner }) => <div className="port-row" key={link.id}><span className={`status-dot ${peer.status}`}/><div><strong>{owner?.name || 'Okänd'} / {peer.name}</strong><small>{formatRate(peer.speedBps)}</small></div>{server
+        ? <div className="port-rate"><span>↓ {fresh(peer) ? formatRate(peer.txBps) : '–'}</span><span>↑ {fresh(peer) ? formatRate(peer.rxBps) : '–'}</span></div>
+        : <div className="port-rate">{fresh(peer) ? formatRate(peer.rxBps) : '–'}<small>in</small></div>}</div>)}</div> : <p className="muted">Inte kopplat ännu. Använd Ny länk och välj {device.name} / Anslutning mot {server ? 'switchporten' : 'routerns port'}.</p>}
+      <div className="detail-foot">{!editing && <button className="secondary" onClick={() => setEditing(true)}><Pencil size={15}/> Redigera {noun}</button>}<button className="text-danger" onClick={() => remove('devices', device.id)}><Trash2 size={15}/> Ta bort {noun}</button></div>
     </aside>
   }
   if (device) {
@@ -254,7 +265,7 @@ function DetailPanel({ topology, selection, onClose, onDelete, onSaved, onError 
     async function toggleAlert(i: Interface) { try { await api(`/interfaces/${i.id}`, { method: 'PATCH', body: JSON.stringify({ alert: !i.alert }) }); onSaved() } catch (e) { onError((e as Error).message) } }
     const alertButton = (i: Interface) => { const always = linked.has(i.id), on = always || i.alert; return <button className={`port-alert ${on ? 'on' : ''}`} disabled={always} aria-pressed={on} aria-label={`Larm för ${i.name}`} title={always ? 'Länkport – bevakas alltid' : on ? 'Larmar när porten går ner. Klicka för att stänga av.' : 'Larma när porten går ner'} onClick={() => toggleAlert(i)}>{on ? <BellRing size={14}/> : <BellOff size={14}/>}</button> }
     return <aside className="details">
-      <PanelHead kind={deviceKind(device.os)} icon={<DeviceIcon os={device.os} size={20}/>} title={device.name} subtitle={<span className="mono">{addressLabel(device)}</span>} onClose={onClose}/>
+      <PanelHead kind={deviceKind(device)} icon={<DeviceIcon device={device} size={20}/>} title={device.name} subtitle={<span className="mono">{addressLabel(device)}</span>} onClose={onClose}/>
       <div className={`status-line ${device.status}`}><span className={`status-dot ${device.status}`}/>{device.status === 'online' ? 'Svarar' : device.status === 'offline' ? 'Svarar inte' : 'Väntar på första mätningen'}<span className="status-line-time"><Clock3 size={13}/> {formatTime(device.lastSeen)}</span></div>
       {device.lastError && <div className="notice-error">{device.lastError}</div>}
       {editing && <EditDevice key={device.id} device={device} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onSaved() }}/>}
@@ -280,13 +291,13 @@ function DetailPanel({ topology, selection, onClose, onDelete, onSaved, onError 
 }
 
 export default function App() {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null), [topology, setTopology] = useState<Topology | null>(null), [selection, setSelection] = useState<Selection>(null), [panel, setPanel] = useState<'device' | 'link' | 'cloud' | 'alerts' | null>(null), [error, setError] = useState(''), [query, setQuery] = useState(''), [nodes, setNodes, onNodesChange] = useNodesState<NetworkNode>([])
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null), [topology, setTopology] = useState<Topology | null>(null), [selection, setSelection] = useState<Selection>(null), [panel, setPanel] = useState<'device' | 'link' | 'cloud' | 'server' | 'alerts' | null>(null), [error, setError] = useState(''), [query, setQuery] = useState(''), [nodes, setNodes, onNodesChange] = useNodesState<NetworkNode>([])
   const [lastContact, setLastContact] = useState(0), [now, setNow] = useState(Date.now())
   const refresh = useCallback(async () => { try { const data = await api<Topology>('/topology'); setTopology(data); setLastContact(Date.now()); setError('') } catch (e) { if ((e as Error).message.includes('Inloggning') || (e as Error).message.includes('Sessionen')) setAuthenticated(false); else setError((e as Error).message) } }, [])
   useEffect(() => { api('/me').then(() => setAuthenticated(true)).catch(() => setAuthenticated(false)) }, [])
   useEffect(() => { if (!authenticated) return; refresh(); const timer = setInterval(refresh, 15000); return () => clearInterval(timer) }, [authenticated, refresh])
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(timer) }, [])
-  useEffect(() => { if (!topology) return; setNodes(existing => { let arranged: ReturnType<typeof arrangeMap> | undefined; return topology.devices.map(device => { const old = existing.find(n => n.id === String(device.id)); const saved = device.x != null && device.y != null ? { x: device.x, y: device.y } : undefined; const current = topology.interfaces.filter(i => i.deviceId === device.id && i.lastSample && topology.serverTime - i.lastSample <= 45 && i.rxBps != null); const position = old?.position || saved || (arranged ??= arrangeMap(topology.devices, topology.interfaces, topology.links)).get(device.id) || { x: 0, y: 0 }; return { id: String(device.id), type: 'networkDevice', position, data: { device, traffic: current.length ? current.reduce((sum, i) => sum + (i.rxBps || 0), 0) : null, cloud: device.os === 'external' ? cloudTraffic(topology, device) : undefined }, selected: selection?.kind === 'device' && selection.id === device.id } }) }) }, [topology, selection, setNodes])
+  useEffect(() => { if (!topology) return; setNodes(existing => { let arranged: ReturnType<typeof arrangeMap> | undefined; return topology.devices.map(device => { const old = existing.find(n => n.id === String(device.id)); const saved = device.x != null && device.y != null ? { x: device.x, y: device.y } : undefined; const current = topology.interfaces.filter(i => i.deviceId === device.id && i.lastSample && topology.serverTime - i.lastSample <= 45 && i.rxBps != null); const position = old?.position || saved || (arranged ??= arrangeMap(topology.devices, topology.interfaces, topology.links)).get(device.id) || { x: 0, y: 0 }; return { id: String(device.id), type: 'networkDevice', position, data: { device, traffic: current.length ? current.reduce((sum, i) => sum + (i.rxBps || 0), 0) : null, external: device.os === 'external' ? externalTraffic(topology, device) : undefined }, selected: selection?.kind === 'device' && selection.id === device.id } }) }) }, [topology, selection, setNodes])
   const flow = useRef<ReactFlowInstance<NetworkNode, TrafficEdge> | null>(null)
   async function savePositions(positions: { id: number; x: number; y: number }[]) { try { await api('/layout', { method: 'PUT', body: JSON.stringify({ positions }) }) } catch (e) { setError((e as Error).message) } }
   function arrange() { if (!topology) return; const positions = arrangeMap(topology.devices, topology.interfaces, topology.links); setNodes(existing => existing.map(n => ({ ...n, position: positions.get(Number(n.id)) || n.position }))); requestAnimationFrame(() => flow.current?.fitView({ padding: 0.15, duration: 300 })); savePositions([...positions].map(([id, p]) => ({ id, ...p }))) }
@@ -340,10 +351,10 @@ export default function App() {
         <div className={linksUp < edges.length ? 'is-bad' : ''}><span>Länkar uppe</span><strong>{linksUp}<small>/{edges.length}</small></strong></div>
         <button className="health-busiest" disabled={!busiest} onClick={() => busiest && setSelection({ kind: 'link', id: Number(busiest.id) })} title="Visa den mest belastade länken"><span>Högst last</span><strong style={{ color: busiest?.data?.load != null && busiest.data.load > 40 ? loadColor(busiest.data.load) : undefined }}>{busiest?.data?.load != null ? `${Math.round(busiest.data.load)} %` : '–'}</strong></button>
       </div>
-      <div className="sidebar-actions"><button className="primary" onClick={() => setPanel(panel === 'device' ? null : 'device')}><Plus size={16}/> Enhet</button><button className="secondary" onClick={() => setPanel(panel === 'link' ? null : 'link')}><Cable size={16}/> Länk</button><button className="secondary" onClick={() => setPanel(panel === 'cloud' ? null : 'cloud')}><Cloud size={16}/> Moln</button></div>
-      {panel === 'device' && <AddDevice onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{panel === 'cloud' && <CloudForm onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{panel === 'alerts' && topology && <AlertPanel topology={topology} onSelect={id => setSelection({ kind: 'device', id })} onCancel={() => setPanel(null)}/>}{panel === 'link' && topology && <AddLink topology={topology} onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}
+      <div className="sidebar-actions"><button className="primary" onClick={() => setPanel(panel === 'device' ? null : 'device')}><Plus size={16}/> Enhet</button><button className="secondary" onClick={() => setPanel(panel === 'link' ? null : 'link')}><Cable size={16}/> Länk</button><button className="secondary" onClick={() => setPanel(panel === 'cloud' ? null : 'cloud')}><Cloud size={16}/> Moln</button><button className="secondary" onClick={() => setPanel(panel === 'server' ? null : 'server')}><Server size={16}/> Server</button></div>
+      {panel === 'device' && <AddDevice onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{(panel === 'cloud' || panel === 'server') && <ExternalForm key={panel} kind={panel} onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{panel === 'alerts' && topology && <AlertPanel topology={topology} onSelect={id => setSelection({ kind: 'device', id })} onCancel={() => setPanel(null)}/>}{panel === 'link' && topology && <AddLink topology={topology} onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}
       <label className="search"><Search size={15}/><input placeholder="Sök enhet, IP eller namn" value={query} onChange={e => setQuery(e.target.value)} aria-label="Sök enhet"/></label>
-      <div className="device-list">{filteredDevices.map(d => <button key={d.id} className={`device-list-item ${d.status === 'offline' ? 'is-offline' : ''} ${selection?.kind === 'device' && selection.id === d.id ? 'active' : ''}`} onClick={() => setSelection({kind:'device',id:d.id})}><span className="list-device-icon"><DeviceIcon os={d.os} size={16}/></span><span className="device-list-text"><strong>{d.name}</strong><small className={d.os === 'external' ? '' : 'mono'}>{d.os === 'external' ? 'Moln' : d.address}</small></span>{d.os !== 'external' && <span className={`status-dot ${d.status}`} title={d.status === 'offline' ? 'Svarar inte' : d.status === 'online' ? 'Svarar' : 'Väntar'}/>}</button>)}
+      <div className="device-list">{filteredDevices.map(d => <button key={d.id} className={`device-list-item ${d.status === 'offline' ? 'is-offline' : ''} ${selection?.kind === 'device' && selection.id === d.id ? 'active' : ''}`} onClick={() => setSelection({kind:'device',id:d.id})}><span className="list-device-icon"><DeviceIcon device={d} size={16}/></span><span className="device-list-text"><strong>{d.name}</strong><small className={d.os === 'external' ? '' : 'mono'}>{d.os === 'external' ? deviceKind(d) : d.address}</small></span>{d.os !== 'external' && <span className={`status-dot ${d.status}`} title={d.status === 'offline' ? 'Svarar inte' : d.status === 'online' ? 'Svarar' : 'Väntar'}/>}</button>)}
         {!filteredDevices.length && <div className="list-empty">{topology?.devices.length ? 'Ingen enhet matchar sökningen.' : 'Lägg till en RouterOS- eller SwOS-enhet för att börja.'}</div>}</div>
       <div className="candidate-section"><div className="list-heading"><h2>Länkförslag</h2><span>{activeCandidates.length}</span></div>{activeCandidates.length ? activeCandidates.map(c => <div className="candidate" key={c.id}><div><strong>{portLabel(c.localInterfaceId)}</strong><small>→ {c.remoteName}{c.remotePort ? ` / ${c.remotePort}` : ''}</small></div><button disabled={!c.remoteDeviceId} onClick={() => accept(c)} title={c.remoteDeviceId ? 'Bekräfta länk' : 'Lägg till motparten först'}>Bekräfta</button><button className="candidate-dismiss" onClick={() => dismiss(c)} title="Neka förslaget. Det flyttas till Nekade förslag.">Neka</button></div>) : <p className="candidate-empty">Inga nya förslag.</p>}
         {dismissed.length > 0 && <div className="dismissed"><button className="dismissed-toggle" aria-expanded={showDismissed} onClick={() => setShowDismissed(!showDismissed)}><ChevronRight size={14} className={showDismissed ? 'open' : ''}/> Nekade förslag <span>{dismissed.length}</span></button>

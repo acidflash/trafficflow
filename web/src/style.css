@@ -88,7 +88,7 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .health .is-bad strong { color: var(--bad-text) }
 .health-busiest:hover:not(:disabled) { background: var(--raised) }
 .health-busiest:disabled { opacity: 1; cursor: default }
-.sidebar-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 12px }
+.sidebar-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 12px }
 .sidebar-actions button { padding: 7px 6px; gap: 5px }
 
 .inline-form { margin: 0 12px 14px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--raised); display: flex; flex-direction: column; gap: 10px }

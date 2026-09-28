@@ -107,11 +107,17 @@ func openStore() (*store, error) {
 		"ALTER TABLE devices ADD COLUMN map_x REAL",
 		"ALTER TABLE devices ADD COLUMN map_y REAL",
 		"ALTER TABLE interfaces ADD COLUMN alert INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE devices ADD COLUMN kind TEXT NOT NULL DEFAULT ''",
 	} {
 		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
 			return nil, fmt.Errorf("migrate: %w", err)
 		}
+	}
+	// Externals created before servers existed were all clouds.
+	if _, err := db.Exec("UPDATE devices SET kind='cloud' WHERE os='external' AND kind=''"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return s, nil
 }

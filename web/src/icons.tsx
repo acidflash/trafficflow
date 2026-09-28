@@ -1,4 +1,4 @@
-import { Cloud } from 'lucide-react'
+import { Cloud, Server } from 'lucide-react'
 import type { Device } from './api'
 
 // Equipment symbols in classic network-diagram notation, drawn to match lucide's 24px grid and stroke.
@@ -20,11 +20,13 @@ export function TopologyMark({ size = 18, strokeWidth = 1.8 }: IconProps) {
   return <svg {...svg(size, strokeWidth)}><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18.5" r="2.5"/><circle cx="19" cy="18.5" r="2.5"/><path d="m10.8 7.2-4.6 9M13.2 7.2l4.6 9M7.5 18.5h9"/></svg>
 }
 
-export function DeviceIcon({ os, size = 18 }: { os: Device['os']; size?: number }) {
-  if (os === 'external') return <Cloud size={size} strokeWidth={1.7} aria-hidden />
-  return os === 'routeros' ? <RouterIcon size={size}/> : <SwitchIcon size={size}/>
+type Kind = Pick<Device, 'os' | 'kind'>
+
+export function DeviceIcon({ device, size = 18 }: { device: Kind; size?: number }) {
+  if (device.os === 'external') return device.kind === 'server' ? <Server size={size} strokeWidth={1.7} aria-hidden /> : <Cloud size={size} strokeWidth={1.7} aria-hidden />
+  return device.os === 'routeros' ? <RouterIcon size={size}/> : <SwitchIcon size={size}/>
 }
 
-export function deviceKind(os: Device['os']) {
-  return os === 'external' ? 'Moln' : os === 'routeros' ? 'Router' : 'Switch'
+export function deviceKind(device: Kind) {
+  return device.os === 'external' ? device.kind === 'server' ? 'Server' : 'Moln' : device.os === 'routeros' ? 'Router' : 'Switch'
 }

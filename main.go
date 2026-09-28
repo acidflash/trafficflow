@@ -233,6 +233,7 @@ type deviceView struct {
 	Address     string   `json:"address"`
 	Resolved    string   `json:"resolved"`
 	OS          string   `json:"os"`
+	Kind        string   `json:"kind"`
 	SNMPVersion string   `json:"snmpVersion"`
 	Status      string   `json:"status"`
 	LastSeen    *int64   `json:"lastSeen"`
@@ -280,7 +281,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	interfaces := []interfaceView{}
 	links := []linkView{}
 	candidates := []candidateView{}
-	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,os,snmp_version,status,last_seen,last_error,map_x,map_y FROM devices ORDER BY name")
+	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,os,kind,snmp_version,status,last_seen,last_error,map_x,map_y FROM devices ORDER BY name")
 	if err != nil {
 		writeError(w, 500, "Kunde inte läsa enheter")
 		return
@@ -288,7 +289,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var x deviceView
 		var last *int64
-		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.OS, &x.SNMPVersion, &x.Status, &last, &x.LastError, &x.X, &x.Y) == nil {
+		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.OS, &x.Kind, &x.SNMPVersion, &x.Status, &last, &x.LastError, &x.X, &x.Y) == nil {
 			x.LastSeen = last
 			devices = append(devices, x)
 		}
@@ -465,7 +466,7 @@ func (a *server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if os == "external" {
-		writeError(w, 400, "Moln har ingen adress eller SNMP-uppgifter")
+		writeError(w, 400, "Externa enheter har ingen adress eller SNMP-uppgifter")
 		return
 	}
 	address, resolved, err := deviceAddress(r.Context(), input.Address)
@@ -548,19 +549,25 @@ func (a *server) saveLayout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// Externals ("clouds") are networks outside our control, such as an upstream operator. They are
-// devices with os 'external' that are never polled, each with one virtual port that can be linked
-// to a real port. Traffic comes from the real port; the virtual port's speed is the contracted
-// capacity, so link load is measured against the contract when it is lower than the port speed.
+// Externals are equipment we cannot poll: clouds (networks outside our control, such as an
+// upstream operator) and servers. They are devices with os 'external' that are never polled, each
+// with one virtual port that can be linked to real ports. Traffic comes from the real ports; the
+// virtual port's speed is the contracted capacity or the server's NIC speed, so link load is
+// measured against it when it is lower than the port speed.
 type externalInput struct {
 	Name        string `json:"name"`
+	Kind        string `json:"kind"`
 	CapacityBps int64  `json:"capacityBps"`
 }
 
 func (e *externalInput) validate() error {
 	e.Name = strings.TrimSpace(e.Name)
 	if e.Name == "" || len([]rune(e.Name)) > 64 {
-		return errors.New("Ange operatörens namn, högst 64 tecken")
+		return errors.New("Ange ett namn, högst 64 tecken")
+	}
+	// An empty kind means a cloud on create and an unchanged kind on update.
+	if e.Kind != "" && e.Kind != "cloud" && e.Kind != "server" {
+		return errors.New("Ogiltig typ")
 	}
 	if e.CapacityBps < 0 || e.CapacityBps > 10_000_000_000_000 {
 		return errors.New("Ogiltig kapacitet")
@@ -577,31 +584,34 @@ func (a *server) addExternal(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	if input.Kind == "" {
+		input.Kind = "cloud"
+	}
 	token := make([]byte, 8)
 	if _, err := rand.Read(token); err != nil {
-		writeError(w, 500, "Kunde inte skapa molnet")
+		writeError(w, 500, "Kunde inte skapa enheten")
 		return
 	}
 	tx, err := a.store.db.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, 500, "Kunde inte skapa molnet")
+		writeError(w, 500, "Kunde inte skapa enheten")
 		return
 	}
 	defer tx.Rollback()
 	// address is unique and unused for externals, so it gets a random placeholder.
-	result, err := tx.ExecContext(r.Context(), "INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES(?,?,'external','',?,'external')",
-		input.Name, "external:"+hex.EncodeToString(token), []byte{})
+	result, err := tx.ExecContext(r.Context(), "INSERT INTO devices(name,address,os,kind,snmp_version,credential,status) VALUES(?,?,'external',?,'',?,'external')",
+		input.Name, "external:"+hex.EncodeToString(token), input.Kind, []byte{})
 	if err != nil {
-		writeError(w, 500, "Kunde inte skapa molnet")
+		writeError(w, 500, "Kunde inte skapa enheten")
 		return
 	}
 	id, _ := result.LastInsertId()
 	if _, err := tx.ExecContext(r.Context(), "INSERT INTO interfaces(device_id,if_index,name,speed_bps,status) VALUES(?,0,'Anslutning',?,'up')", id, input.CapacityBps); err != nil {
-		writeError(w, 500, "Kunde inte skapa molnet")
+		writeError(w, 500, "Kunde inte skapa enheten")
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, 500, "Kunde inte skapa molnet")
+		writeError(w, 500, "Kunde inte skapa enheten")
 		return
 	}
 	writeJSON(w, 201, map[string]int64{"id": id})
@@ -623,25 +633,25 @@ func (a *server) updateExternal(w http.ResponseWriter, r *http.Request) {
 	}
 	tx, err := a.store.db.BeginTx(r.Context(), nil)
 	if err != nil {
-		writeError(w, 500, "Kunde inte spara molnet")
+		writeError(w, 500, "Kunde inte spara enheten")
 		return
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(r.Context(), "UPDATE devices SET name=? WHERE id=? AND os='external'", input.Name, id)
+	result, err := tx.ExecContext(r.Context(), "UPDATE devices SET name=?,kind=COALESCE(NULLIF(?,''),kind) WHERE id=? AND os='external'", input.Name, input.Kind, id)
 	if err != nil {
-		writeError(w, 500, "Kunde inte spara molnet")
+		writeError(w, 500, "Kunde inte spara enheten")
 		return
 	}
 	if n, _ := result.RowsAffected(); n == 0 {
-		writeError(w, 404, "Molnet finns inte")
+		writeError(w, 404, "Enheten finns inte")
 		return
 	}
 	if _, err := tx.ExecContext(r.Context(), "UPDATE interfaces SET speed_bps=? WHERE device_id=?", input.CapacityBps, id); err != nil {
-		writeError(w, 500, "Kunde inte spara molnet")
+		writeError(w, 500, "Kunde inte spara enheten")
 		return
 	}
 	if err := tx.Commit(); err != nil {
-		writeError(w, 500, "Kunde inte spara molnet")
+		writeError(w, 500, "Kunde inte spara enheten")
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})

@@ -33,6 +33,7 @@ Appen behöver åtkomst från servern till enheternas UDP-port 161. Registrera e
 - Knappen Sortera karta ordnar enheterna som ett träd uppifrån, med routern (eller enheten med flest länkar) överst. Positionerna sparas, även när du flyttar enheter för hand.
 - Länkarna färgas efter beläggning i steg om 20 %, från grön (0–20 %) till röd (81–100 %). Beläggningen är den mest belastade riktningen delad med den långsammaste portens hastighet. Grå betyder nere eller saknade mätvärden.
 - Moln representerar nät utanför er kontroll, till exempel en uppströmsoperatör eller peering. Skapa ett moln med operatörens namn och eventuellt avtalad kapacitet, och koppla det till routerns port med Ny länk. Trafiken mäts på routerns port; med avtalad kapacitet färgas länken efter avtalet. Moln placeras ovanför routern när kartan sorteras.
+- Servrar och annan utrustning utan SNMP läggs till med knappen Server. Ange namn och eventuellt nätkortets hastighet, och koppla servern till switchporten med Ny länk. Trafiken mäts på switchporten och visas som trafik till och från servern; med angiven hastighet färgas länken efter nätkortet. En server med flera nätkort kan kopplas till flera portar, och trafiken summeras. Servrar placeras under sin switch när kartan sorteras och larmar inte.
 - En MAC-upptäckt länk tas bort igen om en registrerad enhet senare visar sig sitta mellan portarna. Manuella länkar lämnas orörda.
 - Appen gör inga SNMP-skrivningar och ändrar ingen konfiguration på enheterna.
 

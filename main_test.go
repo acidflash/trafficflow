@@ -427,6 +427,46 @@ func TestExternalCloud(t *testing.T) {
 	if r := send(a.updateDevice, http.MethodPatch, "1", `{"address":"192.0.2.9","community":"","user":"","authPassword":"","privPassword":"","authProtocol":""}`); r.Code != 400 {
 		t.Fatalf("device update of a cloud: %d", r.Code)
 	}
+	var kind string
+	if err := s.db.QueryRow("SELECT kind FROM devices WHERE id=1").Scan(&kind); err != nil || kind != "cloud" {
+		t.Fatalf("kind without kind in the request: %q %v", kind, err)
+	}
+}
+
+func TestExternalServer(t *testing.T) {
+	s := testStore(t)
+	a := &server{store: s}
+	send := func(handler http.HandlerFunc, method, id, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, "/", bytes.NewBufferString(body))
+		request.Header.Set("Content-Type", "application/json")
+		request.SetPathValue("id", id)
+		recorder := httptest.NewRecorder()
+		handler(recorder, request)
+		return recorder
+	}
+	if r := send(a.addExternal, http.MethodPost, "", `{"name":"fil-01","kind":"printer","capacityBps":0}`); r.Code != 400 {
+		t.Fatalf("unknown kind: %d", r.Code)
+	}
+	if r := send(a.addExternal, http.MethodPost, "", `{"name":"fil-01","kind":"server","capacityBps":1000000000}`); r.Code != 201 {
+		t.Fatalf("add: %d %s", r.Code, r.Body.String())
+	}
+	// An update without kind keeps the server a server.
+	if r := send(a.updateExternal, http.MethodPatch, "1", `{"name":"fil-02","capacityBps":10000000000}`); r.Code != 200 {
+		t.Fatalf("update: %d", r.Code)
+	}
+	var name, kind, status string
+	var speed int64
+	if err := s.db.QueryRow("SELECT d.name,d.kind,d.status,i.speed_bps FROM devices d JOIN interfaces i ON i.device_id=d.id").Scan(&name, &kind, &status, &speed); err != nil {
+		t.Fatal(err)
+	}
+	if name != "fil-02" || kind != "server" || status != "external" || speed != 10000000000 {
+		t.Fatalf("server %q %q %q %d", name, kind, status, speed)
+	}
+	recorder := httptest.NewRecorder()
+	a.topology(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(recorder.Body.String(), `"kind":"server"`) {
+		t.Fatalf("topology lacks kind: %s", recorder.Body.String())
+	}
 }
 
 func TestSuffixMac(t *testing.T) {
