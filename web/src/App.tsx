@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ReactFlow, Background, BaseEdge, Controls, EdgeLabelRenderer, getSmoothStepPath, Handle, Position, useNodesState, useStore, type Edge, type EdgeProps, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react'
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, BellOff, BellRing, Cable, ChevronRight, Clock3, Cloud, List, LogOut, Map as MapIcon, MousePointerClick, Network, Pencil, Plus, RefreshCw, Search, Send, Server, Trash2, X } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -62,21 +62,24 @@ type TrafficEdge = Edge<{ down: number | null; up: number | null; load: number |
 // one device share the horizontal segment, but each has its own vertical segment there. When
 // several links end in the same device (clouds above a router), the chip moves to the upper end.
 // When zoomed out, chips are scaled up (up to 2x) so the rates stay readable.
+// Lets a rate chip select its link, so the whole chip is a target and not just the thin line.
+const SelectLink = createContext<(id: number) => void>(() => {})
 function TrafficEdgeView({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, style, data, selected }: EdgeProps<TrafficEdge>) {
   const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition })
   const scale = useStore(s => Math.min(2, Math.max(1, 1 / s.transform[2])))
+  const selectLink = useContext(SelectLink)
   const load = data?.load ?? null
   const place = data?.labelAtSource
     ? { transform: `translate(-50%, 0) translate(${sourceX}px, ${sourceY + 10}px) scale(${scale})`, transformOrigin: '50% 0' }
     : { transform: `translate(-50%, -100%) translate(${targetX}px, ${targetY - 10}px) scale(${scale})`, transformOrigin: '50% 100%' }
   return <><BaseEdge id={id} path={path} style={style}/>
-    <EdgeLabelRenderer><div className={`edge-chip ${selected ? 'is-selected' : ''} ${data?.linkUp ? '' : 'is-down'}`} style={place}>
+    <EdgeLabelRenderer><button type="button" className={`edge-chip ${selected ? 'is-selected' : ''} ${data?.linkUp ? '' : 'is-down'}`} style={place} aria-pressed={selected} aria-label={`Visa länk #${id}`} onClick={() => selectLink(Number(id))}>
       {data?.linkUp ? <>
         <span className="edge-rate" title="Mot enheten nedanför">↓ {formatRate(data.down)}</span>
         <span className="edge-rate" title="Mot enheten ovanför">↑ {formatRate(data.up)}</span>
         {load != null && <span className="edge-load" title={`${Math.round(load)} % av länkens kapacitet`}><span className="meter"><i style={{ width: `${Math.min(100, Math.max(3, load))}%`, background: loadColor(load) }}/></span>{Math.round(load)} %</span>}
       </> : <span className="edge-fault">Nere</span>}
-    </div></EdgeLabelRenderer></>
+    </button></EdgeLabelRenderer></>
 }
 const edgeTypes = { traffic: TrafficEdgeView }
 
@@ -414,7 +417,7 @@ export default function App() {
         {!phone && topology && topology.devices.length > 0 && <button className="secondary" onClick={arrange} title="Ordna enheterna som ett träd utifrån länkarna"><Network size={15}/> Sortera karta</button>}
       </div>
       {error && <div className="toast-error" role="alert"><AlertTriangle size={16}/>{error}<button onClick={() => setError('')} aria-label="Stäng fel"><X size={15}/></button></div>}
-      {topology && topology.devices.length ? <ReactFlow key={topology.devices.map(d => d.id).join(',')} colorMode="dark" nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onInit={instance => { flow.current = instance; requestAnimationFrame(() => instance.fitView({ padding: 0.2 })) }} onNodeDragStop={(_, __, dragged) => savePositions(dragged.map(n => ({ id: Number(n.id), ...n.position })))} onNodeClick={(_, node) => show({kind:'device',id:Number(node.id)})} onEdgeClick={(_, edge) => show({kind:'link',id:Number(edge.id)})} onPaneClick={() => setSelection(null)} fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.08} maxZoom={1.8} nodesDraggable={!phone} nodesConnectable={false} edgesReconnectable={false} proOptions={{ hideAttribution: true }}><Background color="oklch(30% .01 165)" gap={28} size={1}/><Controls showInteractive={false} showZoom={!phone}/></ReactFlow>
+      {topology && topology.devices.length ? <SelectLink.Provider value={id => show({ kind: 'link', id })}><ReactFlow key={topology.devices.map(d => d.id).join(',')} colorMode="dark" nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onInit={instance => { flow.current = instance; requestAnimationFrame(() => instance.fitView({ padding: 0.2 })) }} onNodeDragStop={(_, __, dragged) => savePositions(dragged.map(n => ({ id: Number(n.id), ...n.position })))} onNodeClick={(_, node) => show({kind:'device',id:Number(node.id)})} onEdgeClick={(_, edge) => show({kind:'link',id:Number(edge.id)})} onPaneClick={() => setSelection(null)} fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.08} maxZoom={1.8} nodesDraggable={!phone} nodesConnectable={false} edgesReconnectable={false} proOptions={{ hideAttribution: true }}><Background color="oklch(30% .01 165)" gap={28} size={1}/><Controls showInteractive={false} showZoom={!phone}/></ReactFlow></SelectLink.Provider>
         : topology && <div className="map-empty"><TopologyMark size={30}/><h3>Kartan är tom</h3><p>Lägg till routrar och switchar med IP-adress eller DNS-namn. Portar och länkar hämtas när SNMP svarar.</p><button className="primary" onClick={() => { setPanel('device'); setView('devices') }}><Plus size={16}/> Lägg till första enheten</button></div>}
     </main><DetailPanel topology={topology || {devices:[],interfaces:[],links:[],candidates:[],dismissedCandidates:[],alarms:[],serverTime:0}} selection={selection} sheet={phone ? { expanded: sheetExpanded, onExpand: setSheetExpanded } : undefined} onClose={() => setSelection(null)} onDelete={() => { setSelection(null); refresh() }} onSaved={refresh} onError={setError}/></div>
     {phone && <nav className="tabbar" aria-label="Vyer">

@@ -172,9 +172,12 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .node-external { border-style: dashed; border-radius: 18px; background: transparent }
 .node-external .node-icon { background: transparent; border: 1px dashed var(--line-strong) }
 
-.edge-chip { position: absolute; pointer-events: none; display: grid; gap: 1px; padding: 4px 7px 5px; border-radius: 6px; background: oklch(19.5% .009 var(--hue) / .95); border: 1px solid var(--line); font-size: 10.5px; line-height: 1.35; white-space: nowrap; color: var(--text) }
+.edge-chip { position: absolute; pointer-events: all; cursor: pointer; text-align: left; font-family: inherit; display: grid; gap: 1px; padding: 4px 7px 5px; border-radius: 6px; background: oklch(19.5% .009 var(--hue) / .95); border: 1px solid var(--line); font-size: 10.5px; line-height: 1.35; white-space: nowrap; color: var(--text) }
+.edge-chip:hover { border-color: var(--line-strong) }
 .edge-chip.is-selected { border-color: var(--select) }
 .edge-chip.is-down { border-color: var(--bad-line); background: var(--bad-surface) }
+.edge-chip.is-down:hover { border-color: var(--bad) }
+.edge-chip.is-down.is-selected { border-color: var(--select) }
 .edge-rate { font-weight: 600 }
 .edge-load { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 10px; color: var(--text-3) }
 .edge-fault { font-weight: 700; color: var(--bad-text) }
