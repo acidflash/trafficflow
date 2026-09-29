@@ -232,6 +232,7 @@ type deviceView struct {
 	Name        string   `json:"name"`
 	Address     string   `json:"address"`
 	Resolved    string   `json:"resolved"`
+	Location    string   `json:"location"`
 	OS          string   `json:"os"`
 	Kind        string   `json:"kind"`
 	SNMPVersion string   `json:"snmpVersion"`
@@ -281,7 +282,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	interfaces := []interfaceView{}
 	links := []linkView{}
 	candidates := []candidateView{}
-	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,os,kind,snmp_version,status,last_seen,last_error,map_x,map_y FROM devices ORDER BY name")
+	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,location,os,kind,snmp_version,status,last_seen,last_error,map_x,map_y FROM devices ORDER BY name")
 	if err != nil {
 		writeError(w, 500, "Kunde inte läsa enheter")
 		return
@@ -289,7 +290,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var x deviceView
 		var last *int64
-		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.OS, &x.Kind, &x.SNMPVersion, &x.Status, &last, &x.LastError, &x.X, &x.Y) == nil {
+		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.Location, &x.OS, &x.Kind, &x.SNMPVersion, &x.Status, &last, &x.LastError, &x.X, &x.Y) == nil {
 			x.LastSeen = last
 			devices = append(devices, x)
 		}

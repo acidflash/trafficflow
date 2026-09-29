@@ -1,7 +1,7 @@
 import { Graph, layout } from '@dagrejs/dagre'
 import type { Device, Interface, Link } from './api'
 
-const NODE_WIDTH = 176, NODE_HEIGHT = 84, GAP_X = 26, GAP_Y = 140, LOOSE_PER_ROW = 6
+const NODE_WIDTH = 176, NODE_HEIGHT = 100, GAP_X = 26, GAP_Y = 140, LOOSE_PER_ROW = 6
 
 export type Positions = Map<number, { x: number; y: number }>
 

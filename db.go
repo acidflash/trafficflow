@@ -108,6 +108,7 @@ func openStore() (*store, error) {
 		"ALTER TABLE devices ADD COLUMN map_y REAL",
 		"ALTER TABLE interfaces ADD COLUMN alert INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE devices ADD COLUMN kind TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE devices ADD COLUMN location TEXT NOT NULL DEFAULT ''",
 	} {
 		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			db.Close()

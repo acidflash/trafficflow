@@ -173,6 +173,7 @@ func snmpClient(target string, d deviceConfig, secret credential) (*gosnmp.GoSNM
 const (
 	oidUptime         = ".1.3.6.1.2.1.1.3.0"
 	oidSysName        = ".1.3.6.1.2.1.1.5.0"
+	oidSysLocation    = ".1.3.6.1.2.1.1.6.0"
 	oidIfDescr        = ".1.3.6.1.2.1.2.2.1.2"
 	oidIfMac          = ".1.3.6.1.2.1.2.2.1.6"
 	oidIfSpeed        = ".1.3.6.1.2.1.2.2.1.5"
@@ -253,11 +254,11 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 		return err
 	}
 	defer g.Conn.Close()
-	packet, err := g.Get([]string{oidUptime, oidSysName})
+	packet, err := g.Get([]string{oidUptime, oidSysName, oidSysLocation})
 	if err != nil {
 		return err
 	}
-	if len(packet.Variables) < 2 {
+	if len(packet.Variables) < 3 {
 		return fmt.Errorf("missing system data")
 	}
 	uptime := pduNumber(packet.Variables[0])
@@ -265,7 +266,8 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 	if name == "" {
 		name = d.Name
 	}
-	_, err = c.store.db.ExecContext(ctx, "UPDATE devices SET name=?,resolved=?,status='online',last_seen=?,uptime=?,last_error='' WHERE id=?", name, target, time.Now().Unix(), uptime, d.ID)
+	location := strings.TrimSpace(pduString(packet.Variables[2]))
+	_, err = c.store.db.ExecContext(ctx, "UPDATE devices SET name=?,location=?,resolved=?,status='online',last_seen=?,uptime=?,last_error='' WHERE id=?", name, location, target, time.Now().Unix(), uptime, d.ID)
 	if err != nil {
 		return err
 	}

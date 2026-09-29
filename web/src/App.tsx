@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ReactFlow, Background, BaseEdge, Controls, EdgeLabelRenderer, getSmoothStepPath, Handle, Position, useNodesState, useStore, type Edge, type EdgeProps, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react'
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, BellOff, BellRing, Cable, ChevronRight, Clock3, Cloud, List, LogOut, Map as MapIcon, MousePointerClick, Network, Pencil, Plus, RefreshCw, Search, Send, Server, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, BellOff, BellRing, Cable, ChevronRight, Clock3, Cloud, List, LogOut, Map as MapIcon, MapPin, MousePointerClick, Network, Pencil, Plus, RefreshCw, Search, Send, Server, Trash2, X } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import '@xyflow/react/dist/style.css'
 import { arrangeMap } from './layout'
@@ -47,6 +47,7 @@ function NetworkDevice({ data, selected }: NodeProps<NetworkNode>) {
       <strong title={device.name}>{device.name}</strong>
     </div>
     <div className="node-meta"><span>{deviceKind(device)}</span>{external ? external.capacity > 0 && <span>{server ? 'nätkort' : 'avtal'} {formatRate(external.capacity)}</span> : <span className="mono" title={addressLabel(device)}>{device.address}</span>}</div>
+    {device.location && <div className="node-location" title={device.location}><MapPin size={11}/><span>{device.location}</span></div>}
     <div className="node-rate">{offline ? <span className="node-fault"><AlertTriangle size={12}/> Svarar inte</span> : external
       ? server
         ? <><span title="Till servern">↓ {formatRate(external.outbound)}</span><span title="Från servern">↑ {formatRate(external.inbound)}</span></>
@@ -292,6 +293,7 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
     return panel(<>
       <PanelHead kind={deviceKind(device)} icon={<DeviceIcon device={device} size={20}/>} title={device.name} subtitle={<span className="mono">{addressLabel(device)}</span>} onClose={onClose}/>
       <div className={`status-line ${device.status}`}><span className={`status-dot ${device.status}`}/>{device.status === 'online' ? 'Svarar' : device.status === 'offline' ? 'Svarar inte' : 'Väntar på första mätningen'}<span className="status-line-time"><Clock3 size={13}/> {formatTime(device.lastSeen)}</span></div>
+      {device.location && <div className="detail-location"><MapPin size={14}/> {device.location}</div>}
       {device.lastError && <div className="notice-error">{device.lastError}</div>}
       {editing && <EditDevice key={device.id} device={device} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onSaved() }}/>}
       <div className="section-heading"><h3>Portar</h3><span>{up} uppe av {ports.length}</span></div>
@@ -379,7 +381,7 @@ export default function App() {
   const alarmCount = topology?.alarms.length || 0
   const stale = lastContact > 0 && now - lastContact > 45000
   const statusRank = (d: Device) => d.status === 'offline' ? 0 : d.os === 'external' ? 2 : 1
-  const filteredDevices = (topology?.devices.filter(d => `${d.name} ${d.address} ${d.resolved}`.toLowerCase().includes(query.toLowerCase())) || []).sort((x, y) => statusRank(x) - statusRank(y) || x.name.localeCompare(y.name, 'sv', { numeric: true }))
+  const filteredDevices = (topology?.devices.filter(d => `${d.name} ${d.address} ${d.resolved} ${d.location}`.toLowerCase().includes(query.toLowerCase())) || []).sort((x, y) => statusRank(x) - statusRank(y) || x.name.localeCompare(y.name, 'sv', { numeric: true }))
   const activeCandidates = topology?.candidates.filter(c => !topology.links.some(l => l.aInterfaceId === c.localInterfaceId || l.bInterfaceId === c.localInterfaceId)) || []
   const [showDismissed, setShowDismissed] = useState(false)
   const dismissed = topology?.dismissedCandidates || []
@@ -406,7 +408,7 @@ export default function App() {
       <div className="sidebar-actions"><button className="primary" onClick={() => setPanel(panel === 'device' ? null : 'device')}><Plus size={16}/> Enhet</button><button className="secondary" onClick={() => setPanel(panel === 'link' ? null : 'link')}><Cable size={16}/> Länk</button><button className="secondary" onClick={() => setPanel(panel === 'cloud' ? null : 'cloud')}><Cloud size={16}/> Moln</button><button className="secondary" onClick={() => setPanel(panel === 'server' ? null : 'server')}><Server size={16}/> Server</button></div>
       {panel === 'device' && <AddDevice onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{(panel === 'cloud' || panel === 'server') && <ExternalForm key={panel} kind={panel} onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{panel === 'alerts' && !phone && alertPanel}{panel === 'link' && topology && <AddLink topology={topology} onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}
       <label className="search"><Search size={15}/><input type="search" enterKeyHint="search" placeholder="Sök enhet, IP eller namn" value={query} onChange={e => setQuery(e.target.value)} aria-label="Sök enhet"/></label>
-      <div className="device-list">{filteredDevices.map(d => <button key={d.id} className={`device-list-item ${d.status === 'offline' ? 'is-offline' : ''} ${selection?.kind === 'device' && selection.id === d.id ? 'active' : ''}`} onClick={() => show({kind:'device',id:d.id})}><span className="list-device-icon"><DeviceIcon device={d} size={16}/></span><span className="device-list-text"><strong>{d.name}</strong><small className={d.os === 'external' ? '' : 'mono'}>{d.os === 'external' ? deviceKind(d) : d.address}</small></span>{d.os !== 'external' && <span className={`status-dot ${d.status}`} title={d.status === 'offline' ? 'Svarar inte' : d.status === 'online' ? 'Svarar' : 'Väntar'}/>}</button>)}
+      <div className="device-list">{filteredDevices.map(d => <button key={d.id} className={`device-list-item ${d.status === 'offline' ? 'is-offline' : ''} ${selection?.kind === 'device' && selection.id === d.id ? 'active' : ''}`} onClick={() => show({kind:'device',id:d.id})}><span className="list-device-icon"><DeviceIcon device={d} size={16}/></span><span className="device-list-text"><strong>{d.name}</strong><small className={d.os === 'external' ? '' : 'mono'}>{d.os === 'external' ? deviceKind(d) : d.address}</small>{d.location && <small className="device-list-location">{d.location}</small>}</span>{d.os !== 'external' && <span className={`status-dot ${d.status}`} title={d.status === 'offline' ? 'Svarar inte' : d.status === 'online' ? 'Svarar' : 'Väntar'}/>}</button>)}
         {!filteredDevices.length && <div className="list-empty">{topology?.devices.length ? 'Ingen enhet matchar sökningen.' : 'Lägg till en RouterOS- eller SwOS-enhet för att börja.'}</div>}</div>
       <div className="candidate-section"><div className="list-heading"><h2>Länkförslag</h2><span>{activeCandidates.length}</span></div>{activeCandidates.length ? activeCandidates.map(c => <div className="candidate" key={c.id}><div><strong>{portLabel(c.localInterfaceId)}</strong><small>→ {c.remoteName}{c.remotePort ? ` / ${c.remotePort}` : ''}</small></div><button disabled={!c.remoteDeviceId} onClick={() => accept(c)} title={c.remoteDeviceId ? 'Bekräfta länk' : 'Lägg till motparten först'}>Bekräfta</button><button className="candidate-dismiss" onClick={() => dismiss(c)} title="Neka förslaget. Det flyttas till Nekade förslag.">Neka</button></div>) : <p className="candidate-empty">Inga nya förslag.</p>}
         {dismissed.length > 0 && <div className="dismissed"><button className="dismissed-toggle" aria-expanded={showDismissed} onClick={() => setShowDismissed(!showDismissed)}><ChevronRight size={14} className={showDismissed ? 'open' : ''}/> Nekade förslag <span>{dismissed.length}</span></button>

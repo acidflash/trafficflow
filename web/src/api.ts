@@ -1,4 +1,4 @@
-export type Device = { id: number; name: string; address: string; resolved: string; os: 'routeros' | 'swos' | 'external'; kind: '' | 'cloud' | 'server'; snmpVersion: string; status: string; lastSeen: number | null; lastError: string; x: number | null; y: number | null }
+export type Device = { id: number; name: string; address: string; resolved: string; location: string; os: 'routeros' | 'swos' | 'external'; kind: '' | 'cloud' | 'server'; snmpVersion: string; status: string; lastSeen: number | null; lastError: string; x: number | null; y: number | null }
 export type Interface = { id: number; deviceId: number; ifIndex: number; name: string; description: string; speedBps: number; status: string; rxBps: number | null; txBps: number | null; lastSample: number | null; alert: boolean }
 export type Link = { id: number; aInterfaceId: number; bInterfaceId: number; source: string }
 export type Candidate = { id: number; localInterfaceId: number; remoteDeviceId: number | null; remotePort: string; remoteName: string }
