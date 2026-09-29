@@ -48,7 +48,7 @@ function NetworkDevice({ data, selected }: NodeProps<NetworkNode>) {
     </div>
     <div className="node-meta"><span>{deviceKind(device)}</span>{external ? external.capacity > 0 && <span>{server ? 'nätkort' : 'avtal'} {formatRate(external.capacity)}</span> : <span className="mono" title={addressLabel(device)}>{device.address}</span>}</div>
     {device.location && <div className="node-location" title={device.location}><MapPin size={11}/><span>{device.location}</span></div>}
-    <div className="node-rate">{offline ? <span className="node-fault"><AlertTriangle size={12}/> Svarar inte</span> : external
+    <div className={`node-rate ${external && !offline ? 'node-rate-split' : ''}`}>{offline ? <span className="node-fault"><AlertTriangle size={12}/> Svarar inte</span> : external
       ? server
         ? <><span title="Till servern">↓ {formatRate(external.outbound)}</span><span title="Från servern">↑ {formatRate(external.inbound)}</span></>
         : <><span title="In till nätet">↓ {formatRate(external.inbound)}</span><span title="Ut från nätet">↑ {formatRate(external.outbound)}</span></>

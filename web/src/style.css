@@ -164,10 +164,11 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .node-meta { display: flex; gap: 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; min-width: 0 }
 .node-meta span:last-child { overflow: hidden; text-overflow: ellipsis }
 .node-meta span + span::before { content: "·"; margin-right: 6px }
-.node-location { display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--text-2); min-width: 0 }
-.node-location svg { flex: none; color: var(--text-3) }
+.node-location { display: flex; align-items: center; gap: 4px; margin-top: -2px; font-size: 10px; color: var(--text-3); min-width: 0 }
+.node-location svg { flex: none }
 .node-location span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
-.node-rate { display: flex; gap: 9px; font-size: 11.5px; font-weight: 600; color: var(--text-2) }
+.node-rate { display: flex; gap: 8px; margin-top: 2px; font-size: 11.5px; font-weight: 650; color: var(--text); white-space: nowrap }
+.node-rate-split { flex-direction: column; gap: 1px }
 .node-fault { display: inline-flex; align-items: center; gap: 5px; color: var(--bad-text) }
 /* Routers are the core of the tree; clouds are outside it. */
 .node-routeros { background: var(--raised) }
