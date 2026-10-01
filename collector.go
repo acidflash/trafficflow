@@ -32,10 +32,12 @@ type deviceConfig struct {
 	Credential                 []byte
 }
 type counterPoint struct {
-	In, Out     uint64
-	In64, Out64 bool
-	At          time.Time
-	Uptime      uint64
+	In, Out       uint64
+	In64, Out64   bool
+	InErr, OutErr uint64
+	HasErr        bool
+	At            time.Time
+	Uptime        uint64
 }
 type collector struct {
 	store    *store
@@ -100,7 +102,7 @@ func (c *collector) pollAll(ctx context.Context, metadata bool, start time.Time)
 			if err := c.pollDevice(ctx, d, metadata); err != nil {
 				log.Printf("poll %s: %v", d.Address, err)
 				_, _ = c.store.db.ExecContext(ctx, "UPDATE devices SET status='offline',last_error=? WHERE id=?", err.Error(), d.ID)
-				_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET status='unknown',rx_bps=NULL,tx_bps=NULL WHERE device_id=?", d.ID)
+				_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET status='unknown',rx_bps=NULL,tx_bps=NULL,rx_errors=NULL,tx_errors=NULL WHERE device_id=?", d.ID)
 			}
 		}(d)
 	}
@@ -179,7 +181,9 @@ const (
 	oidIfSpeed        = ".1.3.6.1.2.1.2.2.1.5"
 	oidIfStatus       = ".1.3.6.1.2.1.2.2.1.8"
 	oidIfIn32         = ".1.3.6.1.2.1.2.2.1.10"
+	oidIfInErrors     = ".1.3.6.1.2.1.2.2.1.14"
 	oidIfOut32        = ".1.3.6.1.2.1.2.2.1.16"
+	oidIfOutErrors    = ".1.3.6.1.2.1.2.2.1.20"
 	oidIfName         = ".1.3.6.1.2.1.31.1.1.1.1"
 	oidIfHighSpeed    = ".1.3.6.1.2.1.31.1.1.1.15"
 	oidIfIn64         = ".1.3.6.1.2.1.31.1.1.1.6"
@@ -309,6 +313,7 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 	}
 	rows.Close()
 	statuses := walk(g, oidIfStatus)
+	inErrors, outErrors := walk(g, oidIfInErrors), walk(g, oidIfOutErrors)
 	for _, x := range list {
 		status := "down"
 		if pduNumber(statuses[strconv.Itoa(x.index)]) == 1 {
@@ -333,6 +338,9 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 			continue
 		}
 		point := counterPoint{In: pduNumber(pi), Out: pduNumber(po), In64: use64, Out64: use64, At: now, Uptime: uptime}
+		ei, okEI := inErrors[key]
+		eo, okEO := outErrors[key]
+		point.InErr, point.OutErr, point.HasErr = pduNumber(ei), pduNumber(eo), okEI && okEO
 		c.mu.Lock()
 		prev, has := c.previous[x.id]
 		c.previous[x.id] = point
@@ -340,13 +348,18 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 		if !has {
 			continue
 		}
+		var rxErr, txErr sql.NullFloat64
+		if prev.HasErr && point.HasErr {
+			rxErr.Float64, rxErr.Valid = errorRate(prev.InErr, point.InErr, now.Sub(prev.At), uptime >= prev.Uptime)
+			txErr.Float64, txErr.Valid = errorRate(prev.OutErr, point.OutErr, now.Sub(prev.At), uptime >= prev.Uptime)
+		}
 		rx, okRx := rate(prev.In, point.In, prev.In64 && point.In64, now.Sub(prev.At), x.speed, uptime >= prev.Uptime)
 		tx, okTx := rate(prev.Out, point.Out, prev.Out64 && point.Out64, now.Sub(prev.At), x.speed, uptime >= prev.Uptime)
 		if !okRx || !okTx {
-			_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=NULL,tx_bps=NULL,last_sample=? WHERE id=?", now.Unix(), x.id)
+			_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=NULL,tx_bps=NULL,rx_errors=?,tx_errors=?,last_sample=? WHERE id=?", rxErr, txErr, now.Unix(), x.id)
 			continue
 		}
-		_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=?,tx_bps=?,last_sample=? WHERE id=?", rx, tx, now.Unix(), x.id)
+		_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=?,tx_bps=?,rx_errors=?,tx_errors=?,last_sample=? WHERE id=?", rx, tx, rxErr, txErr, now.Unix(), x.id)
 	}
 	return nil
 }
@@ -372,6 +385,16 @@ func rate(before, after uint64, is64 bool, elapsed time.Duration, speed int64, u
 		return 0, false
 	}
 	return bps, true
+}
+
+// errorRate turns two ifInErrors/ifOutErrors readings into errors per minute. A counter that went
+// backwards was reset (reboot or cleared counters), which says nothing about the interval.
+func errorRate(before, after uint64, elapsed time.Duration, uptimeOK bool) (float64, bool) {
+	seconds := elapsed.Seconds()
+	if !uptimeOK || seconds <= 0 || seconds > 90 || after < before {
+		return 0, false
+	}
+	return float64(after-before) * 60 / seconds, true
 }
 
 func (c *collector) refreshInterfaces(ctx context.Context, g *gosnmp.GoSNMP, deviceID int64) error {

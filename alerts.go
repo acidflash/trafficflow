@@ -26,6 +26,10 @@ import (
 // so a single lost SNMP packet does not wake anyone.
 const alertAfterMisses = 2
 
+// errorClearAfter is how many clean polls in a row close an error alarm. Errors come in bursts,
+// so a short pause should not report the port as healthy and then alarm again.
+const errorClearAfter = 20
+
 type alertConfig struct {
 	DiscordEnabled bool   `json:"discordEnabled"`
 	DiscordWebhook string `json:"discordWebhook,omitempty"`
@@ -38,10 +42,13 @@ type alertConfig struct {
 	SMTPPassword string   `json:"smtpPassword,omitempty"`
 	From         string   `json:"from"`
 	To           []string `json:"to"`
+	// ErrorsPerMinute is how many RX+TX errors per minute a watched port may see before it
+	// alarms; 0 turns error alarms off.
+	ErrorsPerMinute int `json:"errorsPerMinute"`
 }
 
 func (s *store) loadAlertConfig(ctx context.Context) (alertConfig, error) {
-	cfg := alertConfig{SMTPPort: 587, SMTPSecurity: "starttls", To: []string{}}
+	cfg := alertConfig{SMTPPort: 587, SMTPSecurity: "starttls", To: []string{}, ErrorsPerMinute: 10}
 	var value []byte
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='alerts'").Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -126,6 +133,9 @@ func (c *alertConfig) validate() error {
 		to = append(to, address.Address)
 	}
 	c.To = to
+	if c.ErrorsPerMinute < 0 || c.ErrorsPerMinute > 1000000 {
+		return errors.New("Gränsen för fel per minut ska vara 0–1 000 000")
+	}
 	if c.EmailEnabled && (c.SMTPHost == "" || c.From == "" || len(c.To) == 0) {
 		return errors.New("E-post kräver SMTP-server, avsändare och minst en mottagare")
 	}
@@ -134,9 +144,11 @@ func (c *alertConfig) validate() error {
 
 type alertEvent struct {
 	Down    bool
+	Kind    string // device, port or errors
 	Title   string // device name, or "device / port"
 	Address string
-	Since   int64 // when the alarm started
+	Detail  string // what an error alarm saw, e.g. "RX 120 fel/min"
+	Since   int64  // when the alarm started
 	At      int64
 }
 
@@ -147,12 +159,13 @@ type alerter struct {
 
 	mu          sync.Mutex
 	misses      map[string]int
+	clean       map[string]int // clean polls in a row for open alarms that need several to clear
 	lastError   string
 	lastErrorAt int64
 }
 
 func newAlerter(s *store) *alerter {
-	return &alerter{store: s, send: sendAlerts, misses: map[string]int{}}
+	return &alerter{store: s, send: sendAlerts, misses: map[string]int{}, clean: map[string]int{}}
 }
 
 // status reports the latest delivery failure; it is cleared by the next successful delivery.
@@ -182,14 +195,21 @@ type alertTarget struct {
 	interfaceID *int64
 	title       string
 	address     string
+	detail      string
 	down        bool
 	skip        bool // state unknown, e.g. a port on a device that does not answer
+	clearAfter  int  // good polls in a row needed to close the alarm; 0 means the first one
 }
 
 // evaluate compares current device and port states with the open alarms after a poll cycle and
 // sends everything that changed as one message, so a core switch going down is one notification.
 func (a *alerter) evaluate(ctx context.Context) {
 	var targets []alertTarget
+	cfg, err := a.store.loadAlertConfig(ctx)
+	if err != nil {
+		log.Printf("alerts: %v", err)
+		return
+	}
 	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,status FROM devices WHERE os!='external'")
 	if err != nil {
 		log.Printf("alerts: %v", err)
@@ -205,20 +225,34 @@ func (a *alerter) evaluate(ctx context.Context) {
 	}
 	rows.Close()
 	// Link ports are always watched; other ports only when someone turned the alert on.
-	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,i.status FROM interfaces i JOIN devices d ON d.id=i.device_id
+	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,i.status,i.rx_errors,i.tx_errors,i.last_sample FROM interfaces i JOIN devices d ON d.id=i.device_id
 		WHERE d.os!='external' AND (i.alert=1 OR EXISTS (SELECT 1 FROM links l WHERE l.a_interface_id=i.id OR l.b_interface_id=i.id))`)
 	if err != nil {
 		log.Printf("alerts: %v", err)
 		return
 	}
+	now := time.Now().Unix()
 	for rows.Next() {
 		var t alertTarget
 		var id int64
 		var device, port, deviceStatus, status string
-		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &status) == nil {
+		var rxErr, txErr sql.NullFloat64
+		var sampled sql.NullInt64
+		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &status, &rxErr, &txErr, &sampled) == nil {
 			t.key, t.kind, t.interfaceID, t.title = fmt.Sprintf("p:%d", id), "port", &id, device+" / "+port
 			t.down, t.skip = status == "down", deviceStatus != "online"
 			targets = append(targets, t)
+			// The same ports alarm when their error counters climb fast.
+			if cfg.ErrorsPerMinute > 0 {
+				e := t
+				e.key, e.kind, e.clearAfter, e.down = fmt.Sprintf("e:%d", id), "errors", errorClearAfter, false
+				e.skip = t.skip || !rxErr.Valid || !txErr.Valid || !sampled.Valid || now-sampled.Int64 > 45
+				if !e.skip {
+					e.down = rxErr.Float64+txErr.Float64 >= float64(cfg.ErrorsPerMinute)
+					e.detail = fmt.Sprintf("RX %.0f fel/min, TX %.0f fel/min", rxErr.Float64, txErr.Float64)
+				}
+				targets = append(targets, e)
+			}
 		}
 	}
 	rows.Close()
@@ -234,16 +268,18 @@ func (a *alerter) evaluate(ctx context.Context) {
 		var kind string
 		var deviceID, interfaceID sql.NullInt64
 		if rows.Scan(&x.id, &kind, &deviceID, &interfaceID, &x.started) == nil {
-			if kind == "port" {
+			switch kind {
+			case "port":
 				open[fmt.Sprintf("p:%d", interfaceID.Int64)] = x
-			} else {
+			case "errors":
+				open[fmt.Sprintf("e:%d", interfaceID.Int64)] = x
+			default:
 				open[fmt.Sprintf("d:%d", deviceID.Int64)] = x
 			}
 		}
 	}
 	rows.Close()
 
-	now := time.Now().Unix()
 	var events []alertEvent
 	watched := map[string]bool{}
 	a.mu.Lock()
@@ -254,6 +290,7 @@ func (a *alerter) evaluate(ctx context.Context) {
 		case t.skip:
 			delete(a.misses, t.key)
 		case t.down:
+			delete(a.clean, t.key)
 			a.misses[t.key]++
 			if a.misses[t.key] < alertAfterMisses || isOpen {
 				continue
@@ -262,17 +299,22 @@ func (a *alerter) evaluate(ctx context.Context) {
 				log.Printf("alerts: %v", err)
 				continue
 			}
-			events = append(events, alertEvent{Down: true, Title: t.title, Address: t.address, Since: now, At: now})
+			events = append(events, alertEvent{Down: true, Kind: t.kind, Title: t.title, Address: t.address, Detail: t.detail, Since: now, At: now})
 		default:
 			delete(a.misses, t.key)
 			if !isOpen {
+				delete(a.clean, t.key)
 				continue
 			}
+			if a.clean[t.key]++; a.clean[t.key] < t.clearAfter {
+				continue
+			}
+			delete(a.clean, t.key)
 			if _, err := a.store.db.ExecContext(ctx, "UPDATE alarms SET cleared_at=? WHERE id=?", now, alarm.id); err != nil {
 				log.Printf("alerts: %v", err)
 				continue
 			}
-			events = append(events, alertEvent{Title: t.title, Address: t.address, Since: alarm.started, At: now})
+			events = append(events, alertEvent{Kind: t.kind, Title: t.title, Address: t.address, Since: alarm.started, At: now})
 		}
 	}
 	// A port that is no longer watched (link removed, alert turned off) closes quietly.
@@ -284,6 +326,11 @@ func (a *alerter) evaluate(ctx context.Context) {
 	for key := range a.misses {
 		if !watched[key] {
 			delete(a.misses, key)
+		}
+	}
+	for key := range a.clean {
+		if !watched[key] {
+			delete(a.clean, key)
 		}
 	}
 	a.mu.Unlock()
@@ -318,6 +365,12 @@ func formatDuration(seconds int64) string {
 }
 
 func (e alertEvent) line() string {
+	if e.Kind == "errors" {
+		if e.Down {
+			return fmt.Sprintf("FEL   %s (%s) %s sedan %s", e.Title, e.Address, e.Detail, time.Unix(e.Since, 0).Format("15:04"))
+		}
+		return fmt.Sprintf("OK    %s (%s) inga fel efter %s", e.Title, e.Address, formatDuration(e.At-e.Since))
+	}
 	if e.Down {
 		return fmt.Sprintf("NERE  %s (%s) sedan %s", e.Title, e.Address, time.Unix(e.Since, 0).Format("15:04"))
 	}
@@ -327,7 +380,12 @@ func (e alertEvent) line() string {
 func alertSubject(events []alertEvent) string {
 	if len(events) == 1 {
 		state := "uppe igen"
-		if events[0].Down {
+		switch {
+		case events[0].Kind == "errors" && events[0].Down:
+			state = "har många fel"
+		case events[0].Kind == "errors":
+			state = "utan fel igen"
+		case events[0].Down:
 			state = "nere"
 		}
 		return fmt.Sprintf("[Trafficflow] %s %s", events[0].Title, state)
@@ -338,7 +396,7 @@ func alertSubject(events []alertEvent) string {
 			down++
 		}
 	}
-	return fmt.Sprintf("[Trafficflow] %d larm: %d nere, %d uppe", len(events), down, len(events)-down)
+	return fmt.Sprintf("[Trafficflow] %d larm: %d nya, %d avslutade", len(events), down, len(events)-down)
 }
 
 func alertText(events []alertEvent) string {
@@ -352,6 +410,14 @@ func alertText(events []alertEvent) string {
 func discordText(events []alertEvent) string {
 	lines := make([]string, 0, len(events))
 	for _, e := range events {
+		if e.Kind == "errors" {
+			if e.Down {
+				lines = append(lines, fmt.Sprintf("🟠 **FEL** %s `%s` %s sedan %s", e.Title, e.Address, e.Detail, time.Unix(e.Since, 0).Format("15:04")))
+			} else {
+				lines = append(lines, fmt.Sprintf("🟢 **OK** %s `%s` inga fel efter %s", e.Title, e.Address, formatDuration(e.At-e.Since)))
+			}
+			continue
+		}
 		if e.Down {
 			lines = append(lines, fmt.Sprintf("🔴 **NERE** %s `%s` sedan %s", e.Title, e.Address, time.Unix(e.Since, 0).Format("15:04")))
 		} else {

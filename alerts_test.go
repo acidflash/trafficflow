@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // testAlerter records what would have been delivered instead of sending it.
@@ -241,5 +243,102 @@ func TestAlertTestChannel(t *testing.T) {
 	}
 	if w := test("discord"); w.Code != 200 || calls != 1 {
 		t.Fatalf("discord test: %d %s, %d calls", w.Code, w.Body.String(), calls)
+	}
+}
+
+func TestAlertInterfaceErrors(t *testing.T) {
+	s := testStore(t)
+	srv := &server{store: s}
+	secret, _ := s.encrypt(`{"community":"c"}`)
+	for _, address := range []string{"192.0.2.1", "192.0.2.2"} {
+		if _, err := s.db.Exec("INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES(?,?,'swos','2c',?,'online')", "sw-"+address[len(address)-1:], address, secret); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, device := range []int{1, 2, 1} {
+		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(?,?,?,'up')", device, index+1, fmt.Sprintf("ether%d", index+1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.insertLink(t.Context(), 1, 2, "manual"); err != nil {
+		t.Fatal(err)
+	}
+	setErrors := func(rx, tx float64) {
+		t.Helper()
+		// Interface 3 is not watched, so its errors never alarm.
+		if _, err := s.db.Exec("UPDATE interfaces SET rx_errors=?,tx_errors=?,last_sample=?", rx, tx, time.Now().Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, sent := testAlerter(s)
+	setErrors(3, 2)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("alarm below the threshold: %v", got)
+	}
+	setErrors(90, 0)
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("alarm after one poll: %v", got)
+	}
+	a.evaluate(t.Context())
+	got := sent()
+	if len(got) != 1 || len(got[0]) != 2 {
+		t.Fatalf("want both link ends in one message, got %v", got)
+	}
+	for _, e := range got[0] {
+		if !e.Down || e.Kind != "errors" || !strings.Contains(e.Detail, "RX 90") {
+			t.Fatalf("unexpected event %+v", e)
+		}
+	}
+	if subject := alertSubject(got[0][:1]); !strings.Contains(subject, "fel") {
+		t.Fatalf("subject %q", subject)
+	}
+	// A short pause in the errors keeps the alarm open.
+	setErrors(0, 0)
+	for range errorClearAfter - 1 {
+		a.evaluate(t.Context())
+	}
+	setErrors(90, 0)
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("alarm flapped: %v", got)
+	}
+	setErrors(0, 0)
+	for range errorClearAfter {
+		a.evaluate(t.Context())
+	}
+	got = sent()
+	if len(got) != 1 || len(got[0]) != 2 || got[0][0].Down {
+		t.Fatalf("want two recovery events, got %v", got)
+	}
+	// Stale measurements say nothing, and a threshold of 0 turns error alarms off.
+	_, _ = s.db.Exec("UPDATE interfaces SET rx_errors=500,last_sample=?", time.Now().Unix()-600)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("alarm on stale sample: %v", got)
+	}
+	if err := s.saveAlertConfig(t.Context(), alertConfig{SMTPPort: 587, SMTPSecurity: "starttls", To: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	setErrors(500, 500)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("alarm with error alarms off: %v", got)
+	}
+}
+
+func TestErrorRate(t *testing.T) {
+	if v, ok := errorRate(100, 130, 15*time.Second, true); !ok || v != 120 {
+		t.Fatalf("got %v %v, want 120/min", v, ok)
+	}
+	if _, ok := errorRate(100, 5, 15*time.Second, true); ok {
+		t.Fatal("cleared counter accepted")
+	}
+	if _, ok := errorRate(100, 130, 15*time.Second, false); ok {
+		t.Fatal("rebooted device accepted")
 	}
 }

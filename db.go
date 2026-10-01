@@ -109,6 +109,9 @@ func openStore() (*store, error) {
 		"ALTER TABLE interfaces ADD COLUMN alert INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE devices ADD COLUMN kind TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE devices ADD COLUMN location TEXT NOT NULL DEFAULT ''",
+		// Interface errors per minute over the latest poll interval; NULL when unknown.
+		"ALTER TABLE interfaces ADD COLUMN rx_errors REAL",
+		"ALTER TABLE interfaces ADD COLUMN tx_errors REAL",
 	} {
 		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			db.Close()

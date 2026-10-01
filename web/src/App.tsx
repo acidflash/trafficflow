@@ -165,6 +165,8 @@ function AddLink({ topology, onDone, onCancel }: { topology: Topology; onDone: (
   </form>
 }
 
+const errorRate = (i: Interface) => (i.rxErrors || 0) + (i.txErrors || 0)
+const formatErrors = (perMinute: number | null) => perMinute == null ? '–' : perMinute > 0 && perMinute < 1 ? '<1' : String(Math.round(perMinute))
 function since(seconds: number) { const m = Math.max(0, Math.round(seconds / 60)); return m < 60 ? `${m} min` : m < 2880 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 1440)} dygn` }
 
 type Channel = 'discord' | 'email'
@@ -176,7 +178,7 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
   const set = (patch: Partial<AlertSettings>) => setSettings(s => s && { ...s, ...patch })
   async function save() {
     if (!settings) return false
-    const body = { discordEnabled: settings.discordEnabled, discordWebhook: webhook.trim(), emailEnabled: settings.emailEnabled, smtpHost: settings.smtpHost, smtpPort: Number(settings.smtpPort), smtpSecurity: settings.smtpSecurity, smtpUser: settings.smtpUser, smtpPassword: password, from: settings.from, to: to.split(/[,;\s]+/).filter(Boolean) }
+    const body = { discordEnabled: settings.discordEnabled, discordWebhook: webhook.trim(), emailEnabled: settings.emailEnabled, smtpHost: settings.smtpHost, smtpPort: Number(settings.smtpPort), smtpSecurity: settings.smtpSecurity, smtpUser: settings.smtpUser, smtpPassword: password, from: settings.from, to: to.split(/[,;\s]+/).filter(Boolean), errorsPerMinute: Number(settings.errorsPerMinute) }
     const saved = await api<AlertSettings>('/alert-settings', { method: 'PUT', body: JSON.stringify(body) })
     setSettings(saved); setTo(saved.to.join(', ')); setWebhook(''); setPassword('')
     return true
@@ -191,8 +193,9 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
   const testButton = (channel: Channel) => <div className="channel-test"><button type="button" className="secondary" disabled={busy || testing !== null} onClick={() => test(channel)}><Send size={14}/> {testing === channel ? 'Skickar…' : channel === 'discord' ? 'Testa Discord' : 'Testa e-post'}</button>{results[channel] && <span className={results[channel]!.ok ? 'test-ok' : 'test-fail'} role="status">{results[channel]!.text}</span>}</div>
   const alarms = topology.alarms
   return <form className="inline-form alert-panel" onSubmit={submit}><FormTitle title="Larm" onCancel={onCancel}/>
-    {alarms.length ? <div className="alarm-list">{alarms.map(a => <button type="button" key={a.id} className="alarm-item" onClick={() => a.deviceId && onSelect(a.deviceId)}><span className="status-dot offline"/><span><strong>{a.title}</strong><small>{a.kind === 'device' ? 'Svarar inte' : 'Porten är nere'} · {since(topology.serverTime - a.startedAt)}</small></span></button>)}</div> : <p className="muted">Inga aktiva larm. Enheter som slutar svara och länkportar som går ner larmar efter ungefär 30 sekunder.</p>}
+    {alarms.length ? <div className="alarm-list">{alarms.map(a => <button type="button" key={a.id} className="alarm-item" onClick={() => a.deviceId && onSelect(a.deviceId)}><span className="status-dot offline"/><span><strong>{a.title}</strong><small>{a.kind === 'device' ? 'Svarar inte' : a.kind === 'errors' ? 'Många RX/TX-fel' : 'Porten är nere'} · {since(topology.serverTime - a.startedAt)}</small></span></button>)}</div> : <p className="muted">Inga aktiva larm. Enheter som slutar svara och länkportar som går ner eller får många RX/TX-fel larmar efter ungefär 30 sekunder.</p>}
     {settings ? <>
+      <label>Larma vid RX/TX-fel per minut<input value={settings.errorsPerMinute} onChange={e => set({ errorsPerMinute: Number(e.target.value) })} type="number" min={0} max={1000000} required/><small className="field-hint">Gäller länkportar och portar med larm på. 0 stänger av fellarmet.</small></label>
       <fieldset className="channel"><label className="check"><input type="checkbox" checked={settings.discordEnabled} onChange={e => set({ discordEnabled: e.target.checked })}/> Discord</label>
         {settings.discordEnabled && <label>Webhook-URL<input value={webhook} onChange={e => setWebhook(e.target.value)} type="password" autoComplete="off" placeholder={settings.hasDiscordWebhook ? 'Sparad – lämna tomt' : 'https://discord.com/api/webhooks/…'} required={!settings.hasDiscordWebhook}/></label>}{settings.discordEnabled && testButton('discord')}</fieldset>
       <fieldset className="channel"><label className="check"><input type="checkbox" checked={settings.emailEnabled} onChange={e => set({ emailEnabled: e.target.checked })}/> E-post</label>
@@ -210,7 +213,7 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
       <button className="primary" disabled={busy || testing !== null}>{busy ? 'Sparar…' : 'Spara'}</button>
     </> : !error ? <p className="muted">Hämtar inställningar…</p> : <div className="form-error" role="alert">{error}</div>}
     {recent.length > 0 && <div><button type="button" className="dismissed-toggle history-toggle" aria-expanded={showHistory} onClick={() => setShowHistory(!showHistory)}><ChevronRight size={14} className={showHistory ? 'open' : ''}/> Historik <span>{recent.length}</span></button>
-      {showHistory && <div className="alarm-history">{recent.map(a => <div key={a.id}><strong>{a.title}</strong><small>{new Date(a.startedAt * 1000).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })} · nere {since((a.clearedAt || a.startedAt) - a.startedAt)}</small></div>)}</div>}</div>}
+      {showHistory && <div className="alarm-history">{recent.map(a => <div key={a.id}><strong>{a.title}</strong><small>{new Date(a.startedAt * 1000).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })} · {a.kind === 'errors' ? 'fel i' : 'nere'} {since((a.clearedAt || a.startedAt) - a.startedAt)}</small></div>)}</div>}</div>}
   </form>
 }
 
@@ -297,7 +300,7 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
       {device.lastError && <div className="notice-error">{device.lastError}</div>}
       {editing && <EditDevice key={device.id} device={device} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onSaved() }}/>}
       <div className="section-heading"><h3>Portar</h3><span>{up} uppe av {ports.length}</span></div>
-      {ports.length ? <div className="port-list">{ports.map(i => <div className={`port-row ${i.status} ${alarmed.has(i.id) ? 'is-alarm' : ''}`} key={i.id}><span className={`status-dot ${i.status}`}/><div><strong>{i.name}</strong><small>{i.description && i.description !== i.name ? i.description : i.status === 'up' && i.speedBps ? formatRate(i.speedBps) : i.status === 'down' ? 'Ingen länk' : 'Okänd status'}</small></div>{fresh(i) && i.status === 'up' && <div className="port-rate"><span>↓ {formatRate(i.rxBps)}</span><span>↑ {formatRate(i.txBps)}</span></div>}{alertButton(i)}</div>)}</div> : <p className="muted">Portar visas efter första lyckade SNMP-avläsningen.</p>}
+      {ports.length ? <div className="port-list">{ports.map(i => <div className={`port-row ${i.status} ${alarmed.has(i.id) ? 'is-alarm' : ''}`} key={i.id}><span className={`status-dot ${i.status}`}/><div><strong>{i.name}</strong><small>{i.description && i.description !== i.name ? i.description : i.status === 'up' && i.speedBps ? formatRate(i.speedBps) : i.status === 'down' ? 'Ingen länk' : 'Okänd status'}</small>{fresh(i) && errorRate(i) > 0 && <small className="port-errors" title="RX/TX-fel per minut senaste mätningen">RX/TX-fel {formatErrors(i.rxErrors)} / {formatErrors(i.txErrors)} per min</small>}</div>{fresh(i) && i.status === 'up' && <div className="port-rate"><span>↓ {formatRate(i.rxBps)}</span><span>↑ {formatRate(i.txBps)}</span></div>}{alertButton(i)}</div>)}</div> : <p className="muted">Portar visas efter första lyckade SNMP-avläsningen.</p>}
       <div className="detail-foot">{!editing && <button className="secondary" onClick={() => setEditing(true)}><Pencil size={15}/> Redigera enhet</button>}<button className="text-danger" onClick={() => remove('devices', device.id)}><Trash2 size={15}/> Ta bort enhet</button></div>
     </>)
   }
