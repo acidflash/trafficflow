@@ -236,6 +236,7 @@ type deviceView struct {
 	OS          string   `json:"os"`
 	Kind        string   `json:"kind"`
 	SNMPVersion string   `json:"snmpVersion"`
+	WebUser     string   `json:"webUser"`
 	Status      string   `json:"status"`
 	LastSeen    *int64   `json:"lastSeen"`
 	LastError   string   `json:"lastError"`
@@ -285,7 +286,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	interfaces := []interfaceView{}
 	links := []linkView{}
 	candidates := []candidateView{}
-	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,location,os,kind,snmp_version,status,last_seen,last_error,map_x,map_y FROM devices ORDER BY name")
+	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,location,os,kind,snmp_version,web_user,status,last_seen,last_error,map_x,map_y FROM devices ORDER BY name")
 	if err != nil {
 		writeError(w, 500, "Kunde inte läsa enheter")
 		return
@@ -293,7 +294,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var x deviceView
 		var last *int64
-		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.Location, &x.OS, &x.Kind, &x.SNMPVersion, &x.Status, &last, &x.LastError, &x.X, &x.Y) == nil {
+		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.Location, &x.OS, &x.Kind, &x.SNMPVersion, &x.WebUser, &x.Status, &last, &x.LastError, &x.X, &x.Y) == nil {
 			x.LastSeen = last
 			devices = append(devices, x)
 		}
@@ -458,6 +459,9 @@ func (a *server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		AuthPassword string `json:"authPassword"`
 		PrivPassword string `json:"privPassword"`
 		AuthProtocol string `json:"authProtocol"`
+		// WebUser replaces the SwOS web login; empty removes it. An empty WebPassword keeps the saved one.
+		WebUser     string `json:"webUser"`
+		WebPassword string `json:"webPassword"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeError(w, 400, err.Error())
@@ -503,13 +507,26 @@ func (a *server) updateDevice(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	input.WebUser = strings.TrimSpace(input.WebUser)
+	if os != "swos" {
+		input.WebUser = ""
+	}
+	if input.WebPassword != "" {
+		secret.WebPassword = input.WebPassword
+	}
+	if input.WebUser == "" {
+		secret.WebPassword = ""
+	} else if len(input.WebUser) > 64 || secret.WebPassword == "" {
+		writeError(w, 400, "Webbinloggning kräver användare och lösenord")
+		return
+	}
 	encoded, _ := json.Marshal(secret)
 	encrypted, err := a.store.encrypt(string(encoded))
 	if err != nil {
 		writeError(w, 500, "Kunde inte lagra uppgifter")
 		return
 	}
-	_, err = a.store.db.ExecContext(r.Context(), "UPDATE devices SET address=?,resolved=?,credential=? WHERE id=?", address, resolved, encrypted, id)
+	_, err = a.store.db.ExecContext(r.Context(), "UPDATE devices SET address=?,resolved=?,web_user=?,credential=? WHERE id=?", address, resolved, input.WebUser, encrypted, id)
 	if err != nil {
 		writeError(w, 409, "Adressen används redan av en annan enhet")
 		return

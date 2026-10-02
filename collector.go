@@ -22,6 +22,8 @@ type credential struct {
 	PrivPassword string `json:"privPassword,omitempty"`
 	// AuthProtocol is MD5, SHA1 or SHA256. Empty means SHA256, which earlier versions always used.
 	AuthProtocol string `json:"authProtocol,omitempty"`
+	// WebPassword logs in to the SwOS web interface, which has counters SNMP lacks.
+	WebPassword string `json:"webPassword,omitempty"`
 }
 
 var authProtocols = map[string]gosnmp.SnmpV3AuthProtocol{"MD5": gosnmp.MD5, "SHA1": gosnmp.SHA, "SHA256": gosnmp.SHA256, "": gosnmp.SHA256}
@@ -29,6 +31,7 @@ var authProtocols = map[string]gosnmp.SnmpV3AuthProtocol{"MD5": gosnmp.MD5, "SHA
 type deviceConfig struct {
 	ID                         int64
 	Name, Address, OS, Version string
+	WebUser                    string
 	Credential                 []byte
 }
 type counterPoint struct {
@@ -76,7 +79,7 @@ func (c *collector) run(ctx context.Context) {
 }
 
 func (c *collector) pollAll(ctx context.Context, metadata bool, start time.Time) {
-	rows, err := c.store.db.QueryContext(ctx, "SELECT id,name,address,os,snmp_version,credential FROM devices WHERE os!='external'")
+	rows, err := c.store.db.QueryContext(ctx, "SELECT id,name,address,os,snmp_version,web_user,credential FROM devices WHERE os!='external'")
 	if err != nil {
 		log.Printf("list devices: %v", err)
 		return
@@ -84,7 +87,7 @@ func (c *collector) pollAll(ctx context.Context, metadata bool, start time.Time)
 	var devices []deviceConfig
 	for rows.Next() {
 		var d deviceConfig
-		if err := rows.Scan(&d.ID, &d.Name, &d.Address, &d.OS, &d.Version, &d.Credential); err == nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Address, &d.OS, &d.Version, &d.WebUser, &d.Credential); err == nil {
 			devices = append(devices, d)
 		}
 	}
@@ -319,9 +322,25 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 	rows.Close()
 	statuses := walk(g, oidIfStatus)
 	inErrors, outErrors := walk(g, oidIfInErrors), walk(g, oidIfOutErrors)
-	rxPause := walk(g, oidMtxrRxPause)
-	if len(rxPause) == 0 {
-		rxPause = walk(g, oidDot3InPause)
+	rxPause := map[string]uint64{}
+	if d.OS == "swos" && d.WebUser != "" {
+		// SwOS has no pause counters over SNMP, only in its web interface.
+		if counts, err := swosRxPause(ctx, target, d.WebUser, secret.WebPassword); err != nil {
+			log.Printf("swos web %s: %v", d.Address, err)
+			_, _ = c.store.db.ExecContext(ctx, "UPDATE devices SET last_error=? WHERE id=?", "RX pause: "+err.Error(), d.ID)
+		} else {
+			for i, count := range counts {
+				rxPause[strconv.Itoa(i+1)] = count
+			}
+		}
+	} else {
+		pauses := walk(g, oidMtxrRxPause)
+		if len(pauses) == 0 {
+			pauses = walk(g, oidDot3InPause)
+		}
+		for key, p := range pauses {
+			rxPause[key] = pduNumber(p)
+		}
 	}
 	for _, x := range list {
 		status := "down"
@@ -350,8 +369,7 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 		ei, okEI := inErrors[key]
 		eo, okEO := outErrors[key]
 		point.InErr, point.OutErr, point.HasErr = pduNumber(ei), pduNumber(eo), okEI && okEO
-		pp, okP := rxPause[key]
-		point.RxPause, point.HasPause = pduNumber(pp), okP
+		point.RxPause, point.HasPause = rxPause[key]
 		c.mu.Lock()
 		prev, has := c.previous[x.id]
 		c.previous[x.id] = point

@@ -114,6 +114,8 @@ func openStore() (*store, error) {
 		"ALTER TABLE interfaces ADD COLUMN tx_errors REAL",
 		// Received pause frames per minute over the latest poll interval; NULL when unknown.
 		"ALTER TABLE interfaces ADD COLUMN rx_pause REAL",
+		// SwOS web login user; the password lives in the encrypted credential. Empty means none.
+		"ALTER TABLE devices ADD COLUMN web_user TEXT NOT NULL DEFAULT ''",
 	} {
 		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			db.Close()

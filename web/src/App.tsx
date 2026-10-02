@@ -219,15 +219,17 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
 }
 
 function EditDevice({ device, onDone, onCancel }: { device: Device; onDone: () => void; onCancel: () => void }) {
-  const [address, setAddress] = useState(device.address), [community, setCommunity] = useState(''), [user, setUser] = useState(''), [authPassword, setAuthPassword] = useState(''), [privPassword, setPrivPassword] = useState(''), [authProtocol, setAuthProtocol] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  const [address, setAddress] = useState(device.address), [community, setCommunity] = useState(''), [user, setUser] = useState(''), [authPassword, setAuthPassword] = useState(''), [privPassword, setPrivPassword] = useState(''), [authProtocol, setAuthProtocol] = useState(''), [webUser, setWebUser] = useState(device.webUser), [webPassword, setWebPassword] = useState(''), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('')
-    try { await api(`/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ address, community, user, authPassword, privPassword, authProtocol }) }); onDone() }
+    try { await api(`/devices/${device.id}`, { method: 'PATCH', body: JSON.stringify({ address, community, user, authPassword, privPassword, authProtocol, webUser, webPassword }) }); onDone() }
     catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   return <form className="inline-form" onSubmit={submit}><FormTitle title="Redigera enhet" onCancel={onCancel}/>
     <label>IP-adress eller DNS-namn<input value={address} onChange={e => setAddress(e.target.value)} autoCapitalize="off" spellCheck={false} required /></label>
     {device.snmpVersion === '2c' ? <label>SNMP-community<input value={community} onChange={e => setCommunity(e.target.value)} type="password" placeholder="Oförändrad" autoComplete="off" /></label> : <><label>SNMPv3-användare<input value={user} onChange={e => setUser(e.target.value)} placeholder="Oförändrad" autoComplete="off" /></label><label>Autentiseringsprotokoll<select value={authProtocol} onChange={e => setAuthProtocol(e.target.value)}><option value="">Oförändrat</option>{authOptions}</select></label><label>Autentiseringslösenord<input value={authPassword} onChange={e => setAuthPassword(e.target.value)} type="password" minLength={8} placeholder="Oförändrat" autoComplete="new-password" /></label><label>Krypteringslösenord, AES<input value={privPassword} onChange={e => setPrivPassword(e.target.value)} type="password" minLength={8} placeholder="Oförändrat" autoComplete="new-password" /></label></>}
+    {device.os === 'swos' && <><label>Webbanvändare, SwOS<input value={webUser} onChange={e => setWebUser(e.target.value)} placeholder="Ingen" autoCapitalize="off" spellCheck={false} autoComplete="off" /><small className="field-hint">Används bara för att läsa RX pause, som SwOS inte har i SNMP. Töm fältet för att ta bort inloggningen.</small></label>
+      {webUser.trim() && <label>Webblösenord<input value={webPassword} onChange={e => setWebPassword(e.target.value)} type="password" placeholder={device.webUser ? 'Oförändrat' : ''} required={!device.webUser} autoComplete="new-password" /></label>}</>}
     <p className="muted">Lämna SNMP-fälten tomma för att behålla sparade uppgifter. Portar, länkar och historik behålls.</p>
     {error && <div className="form-error" role="alert">{error}</div>}<button className="primary" disabled={busy}>{busy ? 'Sparar…' : 'Spara ändringar'}</button>
   </form>
