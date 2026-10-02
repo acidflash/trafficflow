@@ -255,6 +255,7 @@ type interfaceView struct {
 	LastSample  *int64   `json:"lastSample"`
 	RxErrors    *float64 `json:"rxErrors"`
 	TxErrors    *float64 `json:"txErrors"`
+	RxPause     *float64 `json:"rxPause"`
 	Alert       bool     `json:"alert"`
 }
 type linkView struct {
@@ -298,7 +299,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows.Close()
-	rows, err = a.store.db.QueryContext(ctx, "SELECT id,device_id,if_index,name,description,speed_bps,status,rx_bps,tx_bps,last_sample,rx_errors,tx_errors,alert FROM interfaces ORDER BY device_id,if_index")
+	rows, err = a.store.db.QueryContext(ctx, "SELECT id,device_id,if_index,name,description,speed_bps,status,rx_bps,tx_bps,last_sample,rx_errors,tx_errors,rx_pause,alert FROM interfaces ORDER BY device_id,if_index")
 	if err != nil {
 		writeError(w, 500, "Kunde inte läsa portar")
 		return
@@ -307,7 +308,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 		var x interfaceView
 		var rx, tx *float64
 		var at *int64
-		if rows.Scan(&x.ID, &x.DeviceID, &x.IfIndex, &x.Name, &x.Description, &x.SpeedBps, &x.Status, &rx, &tx, &at, &x.RxErrors, &x.TxErrors, &x.Alert) == nil {
+		if rows.Scan(&x.ID, &x.DeviceID, &x.IfIndex, &x.Name, &x.Description, &x.SpeedBps, &x.Status, &rx, &tx, &at, &x.RxErrors, &x.TxErrors, &x.RxPause, &x.Alert) == nil {
 			x.RxBps = rx
 			x.TxBps = tx
 			x.LastSample = at
@@ -1001,7 +1002,7 @@ func (a *server) testAlertSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	text := "Testmeddelande från Trafficflow. Larm om enheter och portar som går ner eller får många fel skickas hit."
+	text := "Testmeddelande från Trafficflow. Larm om enheter och portar som går ner, får många fel eller många RX pause skickas hit."
 	switch input.Channel {
 	case "discord":
 		if cfg.DiscordWebhook == "" {

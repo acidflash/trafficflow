@@ -45,10 +45,13 @@ type alertConfig struct {
 	// ErrorsPerMinute is how many RX+TX errors per minute a watched port may see before it
 	// alarms; 0 turns error alarms off.
 	ErrorsPerMinute int `json:"errorsPerMinute"`
+	// PausePerMinute is how many received pause frames per minute a watched port may see before
+	// it alarms; 0 turns pause alarms off.
+	PausePerMinute int `json:"pausePerMinute"`
 }
 
 func (s *store) loadAlertConfig(ctx context.Context) (alertConfig, error) {
-	cfg := alertConfig{SMTPPort: 587, SMTPSecurity: "starttls", To: []string{}, ErrorsPerMinute: 10}
+	cfg := alertConfig{SMTPPort: 587, SMTPSecurity: "starttls", To: []string{}, ErrorsPerMinute: 10, PausePerMinute: 6000}
 	var value []byte
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='alerts'").Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -136,6 +139,9 @@ func (c *alertConfig) validate() error {
 	if c.ErrorsPerMinute < 0 || c.ErrorsPerMinute > 1000000 {
 		return errors.New("Gränsen för fel per minut ska vara 0–1 000 000")
 	}
+	if c.PausePerMinute < 0 || c.PausePerMinute > 100000000 {
+		return errors.New("Gränsen för RX pause per minut ska vara 0–100 000 000")
+	}
 	if c.EmailEnabled && (c.SMTPHost == "" || c.From == "" || len(c.To) == 0) {
 		return errors.New("E-post kräver SMTP-server, avsändare och minst en mottagare")
 	}
@@ -144,10 +150,10 @@ func (c *alertConfig) validate() error {
 
 type alertEvent struct {
 	Down    bool
-	Kind    string // device, port or errors
+	Kind    string // device, port, errors or pause
 	Title   string // device name, or "device / port"
 	Address string
-	Detail  string // what an error alarm saw, e.g. "RX 120 fel/min"
+	Detail  string // what an error or pause alarm saw, e.g. "RX 120 fel/min"
 	Since   int64  // when the alarm started
 	At      int64
 }
@@ -225,7 +231,7 @@ func (a *alerter) evaluate(ctx context.Context) {
 	}
 	rows.Close()
 	// Link ports are always watched; other ports only when someone turned the alert on.
-	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,i.status,i.rx_errors,i.tx_errors,i.last_sample FROM interfaces i JOIN devices d ON d.id=i.device_id
+	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,i.status,i.rx_errors,i.tx_errors,i.rx_pause,i.last_sample FROM interfaces i JOIN devices d ON d.id=i.device_id
 		WHERE d.os!='external' AND (i.alert=1 OR EXISTS (SELECT 1 FROM links l WHERE l.a_interface_id=i.id OR l.b_interface_id=i.id))`)
 	if err != nil {
 		log.Printf("alerts: %v", err)
@@ -236,9 +242,9 @@ func (a *alerter) evaluate(ctx context.Context) {
 		var t alertTarget
 		var id int64
 		var device, port, deviceStatus, status string
-		var rxErr, txErr sql.NullFloat64
+		var rxErr, txErr, rxPause sql.NullFloat64
 		var sampled sql.NullInt64
-		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &status, &rxErr, &txErr, &sampled) == nil {
+		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &status, &rxErr, &txErr, &rxPause, &sampled) == nil {
 			t.key, t.kind, t.interfaceID, t.title = fmt.Sprintf("p:%d", id), "port", &id, device+" / "+port
 			t.down, t.skip = status == "down", deviceStatus != "online"
 			targets = append(targets, t)
@@ -250,6 +256,17 @@ func (a *alerter) evaluate(ctx context.Context) {
 				if !e.skip {
 					e.down = rxErr.Float64+txErr.Float64 >= float64(cfg.ErrorsPerMinute)
 					e.detail = fmt.Sprintf("RX %.0f fel/min, TX %.0f fel/min", rxErr.Float64, txErr.Float64)
+				}
+				targets = append(targets, e)
+			}
+			// Many received pause frames mean the neighbour keeps asking this port to stop sending.
+			if cfg.PausePerMinute > 0 {
+				e := t
+				e.key, e.kind, e.clearAfter, e.down = fmt.Sprintf("x:%d", id), "pause", errorClearAfter, false
+				e.skip = t.skip || !rxPause.Valid || !sampled.Valid || now-sampled.Int64 > 45
+				if !e.skip {
+					e.down = rxPause.Float64 >= float64(cfg.PausePerMinute)
+					e.detail = fmt.Sprintf("RX pause %.0f/min", rxPause.Float64)
 				}
 				targets = append(targets, e)
 			}
@@ -273,6 +290,8 @@ func (a *alerter) evaluate(ctx context.Context) {
 				open[fmt.Sprintf("p:%d", interfaceID.Int64)] = x
 			case "errors":
 				open[fmt.Sprintf("e:%d", interfaceID.Int64)] = x
+			case "pause":
+				open[fmt.Sprintf("x:%d", interfaceID.Int64)] = x
 			default:
 				open[fmt.Sprintf("d:%d", deviceID.Int64)] = x
 			}
@@ -371,6 +390,12 @@ func (e alertEvent) line() string {
 		}
 		return fmt.Sprintf("OK    %s (%s) inga fel efter %s", e.Title, e.Address, formatDuration(e.At-e.Since))
 	}
+	if e.Kind == "pause" {
+		if e.Down {
+			return fmt.Sprintf("PAUSE %s (%s) %s sedan %s", e.Title, e.Address, e.Detail, time.Unix(e.Since, 0).Format("15:04"))
+		}
+		return fmt.Sprintf("OK    %s (%s) normal pause efter %s", e.Title, e.Address, formatDuration(e.At-e.Since))
+	}
 	if e.Down {
 		return fmt.Sprintf("NERE  %s (%s) sedan %s", e.Title, e.Address, time.Unix(e.Since, 0).Format("15:04"))
 	}
@@ -385,6 +410,10 @@ func alertSubject(events []alertEvent) string {
 			state = "har många fel"
 		case events[0].Kind == "errors":
 			state = "utan fel igen"
+		case events[0].Kind == "pause" && events[0].Down:
+			state = "tar emot många pause-ramar"
+		case events[0].Kind == "pause":
+			state = "har normal pause igen"
 		case events[0].Down:
 			state = "nere"
 		}
@@ -415,6 +444,14 @@ func discordText(events []alertEvent) string {
 				lines = append(lines, fmt.Sprintf("🟠 **FEL** %s `%s` %s sedan %s", e.Title, e.Address, e.Detail, time.Unix(e.Since, 0).Format("15:04")))
 			} else {
 				lines = append(lines, fmt.Sprintf("🟢 **OK** %s `%s` inga fel efter %s", e.Title, e.Address, formatDuration(e.At-e.Since)))
+			}
+			continue
+		}
+		if e.Kind == "pause" {
+			if e.Down {
+				lines = append(lines, fmt.Sprintf("🟡 **PAUSE** %s `%s` %s sedan %s", e.Title, e.Address, e.Detail, time.Unix(e.Since, 0).Format("15:04")))
+			} else {
+				lines = append(lines, fmt.Sprintf("🟢 **OK** %s `%s` normal pause efter %s", e.Title, e.Address, formatDuration(e.At-e.Since)))
 			}
 			continue
 		}

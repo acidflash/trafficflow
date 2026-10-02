@@ -331,6 +331,59 @@ func TestAlertInterfaceErrors(t *testing.T) {
 	}
 }
 
+func TestAlertRxPause(t *testing.T) {
+	s := testStore(t)
+	srv := &server{store: s}
+	secret, _ := s.encrypt(`{"community":"c"}`)
+	for _, address := range []string{"192.0.2.1", "192.0.2.2"} {
+		if _, err := s.db.Exec("INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES(?,?,'swos','2c',?,'online')", "sw-"+address[len(address)-1:], address, secret); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, device := range []int{1, 2} {
+		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(?,?,?,'up')", device, index+1, fmt.Sprintf("ether%d", index+1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.insertLink(t.Context(), 1, 2, "manual"); err != nil {
+		t.Fatal(err)
+	}
+	setPause := func(id int, perMinute float64) {
+		t.Helper()
+		if _, err := s.db.Exec("UPDATE interfaces SET rx_pause=?,last_sample=? WHERE id=?", perMinute, time.Now().Unix(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, sent := testAlerter(s)
+	setPause(1, 100)
+	setPause(2, 0)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("alarm below the threshold: %v", got)
+	}
+	setPause(1, 9000)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	got := sent()
+	if len(got) != 1 || len(got[0]) != 1 {
+		t.Fatalf("want one pause alarm, got %v", got)
+	}
+	if e := got[0][0]; !e.Down || e.Kind != "pause" || e.Title != "sw-1 / ether1" || !strings.Contains(e.Detail, "9000") {
+		t.Fatalf("unexpected event %+v", e)
+	}
+	if subject := alertSubject(got[0]); !strings.Contains(subject, "pause") {
+		t.Fatalf("subject %q", subject)
+	}
+	setPause(1, 0)
+	for range errorClearAfter {
+		a.evaluate(t.Context())
+	}
+	if got := sent(); len(got) != 1 || len(got[0]) != 1 || got[0][0].Down || got[0][0].Kind != "pause" {
+		t.Fatalf("want one recovery event, got %v", got)
+	}
+}
+
 func TestErrorRate(t *testing.T) {
 	if v, ok := errorRate(100, 130, 15*time.Second, true); !ok || v != 120 {
 		t.Fatalf("got %v %v, want 120/min", v, ok)

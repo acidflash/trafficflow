@@ -36,6 +36,8 @@ type counterPoint struct {
 	In64, Out64   bool
 	InErr, OutErr uint64
 	HasErr        bool
+	RxPause       uint64
+	HasPause      bool
 	At            time.Time
 	Uptime        uint64
 }
@@ -102,7 +104,7 @@ func (c *collector) pollAll(ctx context.Context, metadata bool, start time.Time)
 			if err := c.pollDevice(ctx, d, metadata); err != nil {
 				log.Printf("poll %s: %v", d.Address, err)
 				_, _ = c.store.db.ExecContext(ctx, "UPDATE devices SET status='offline',last_error=? WHERE id=?", err.Error(), d.ID)
-				_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET status='unknown',rx_bps=NULL,tx_bps=NULL,rx_errors=NULL,tx_errors=NULL WHERE device_id=?", d.ID)
+				_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET status='unknown',rx_bps=NULL,tx_bps=NULL,rx_errors=NULL,tx_errors=NULL,rx_pause=NULL WHERE device_id=?", d.ID)
 			}
 		}(d)
 	}
@@ -196,6 +198,9 @@ const (
 	oidFdbPort        = ".1.3.6.1.2.1.17.4.3.1.2"
 	oidFdbStatus      = ".1.3.6.1.2.1.17.4.3.1.3"
 	oidQFdbPort       = ".1.3.6.1.2.1.17.7.1.2.2.1.2"
+	// Received pause frames: MIKROTIK-MIB mtxrInterfaceStatsRxPause, else EtherLike-MIB dot3InPauseFrames.
+	oidMtxrRxPause = ".1.3.6.1.4.1.14988.1.1.14.1.1.43"
+	oidDot3InPause = ".1.3.6.1.2.1.10.7.10.1.3"
 )
 
 func walk(g *gosnmp.GoSNMP, oid string) map[string]gosnmp.SnmpPDU {
@@ -314,6 +319,10 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 	rows.Close()
 	statuses := walk(g, oidIfStatus)
 	inErrors, outErrors := walk(g, oidIfInErrors), walk(g, oidIfOutErrors)
+	rxPause := walk(g, oidMtxrRxPause)
+	if len(rxPause) == 0 {
+		rxPause = walk(g, oidDot3InPause)
+	}
 	for _, x := range list {
 		status := "down"
 		if pduNumber(statuses[strconv.Itoa(x.index)]) == 1 {
@@ -341,6 +350,8 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 		ei, okEI := inErrors[key]
 		eo, okEO := outErrors[key]
 		point.InErr, point.OutErr, point.HasErr = pduNumber(ei), pduNumber(eo), okEI && okEO
+		pp, okP := rxPause[key]
+		point.RxPause, point.HasPause = pduNumber(pp), okP
 		c.mu.Lock()
 		prev, has := c.previous[x.id]
 		c.previous[x.id] = point
@@ -353,13 +364,17 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 			rxErr.Float64, rxErr.Valid = errorRate(prev.InErr, point.InErr, now.Sub(prev.At), uptime >= prev.Uptime)
 			txErr.Float64, txErr.Valid = errorRate(prev.OutErr, point.OutErr, now.Sub(prev.At), uptime >= prev.Uptime)
 		}
+		var pause sql.NullFloat64
+		if prev.HasPause && point.HasPause {
+			pause.Float64, pause.Valid = errorRate(prev.RxPause, point.RxPause, now.Sub(prev.At), uptime >= prev.Uptime)
+		}
 		rx, okRx := rate(prev.In, point.In, prev.In64 && point.In64, now.Sub(prev.At), x.speed, uptime >= prev.Uptime)
 		tx, okTx := rate(prev.Out, point.Out, prev.Out64 && point.Out64, now.Sub(prev.At), x.speed, uptime >= prev.Uptime)
 		if !okRx || !okTx {
-			_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=NULL,tx_bps=NULL,rx_errors=?,tx_errors=?,last_sample=? WHERE id=?", rxErr, txErr, now.Unix(), x.id)
+			_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=NULL,tx_bps=NULL,rx_errors=?,tx_errors=?,rx_pause=?,last_sample=? WHERE id=?", rxErr, txErr, pause, now.Unix(), x.id)
 			continue
 		}
-		_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=?,tx_bps=?,rx_errors=?,tx_errors=?,last_sample=? WHERE id=?", rx, tx, rxErr, txErr, now.Unix(), x.id)
+		_, _ = c.store.db.ExecContext(ctx, "UPDATE interfaces SET rx_bps=?,tx_bps=?,rx_errors=?,tx_errors=?,rx_pause=?,last_sample=? WHERE id=?", rx, tx, rxErr, txErr, pause, now.Unix(), x.id)
 	}
 	return nil
 }
@@ -387,7 +402,7 @@ func rate(before, after uint64, is64 bool, elapsed time.Duration, speed int64, u
 	return bps, true
 }
 
-// errorRate turns two ifInErrors/ifOutErrors readings into errors per minute. A counter that went
+// errorRate turns two error or pause counter readings into events per minute. A counter that went
 // backwards was reset (reboot or cleared counters), which says nothing about the interval.
 func errorRate(before, after uint64, elapsed time.Duration, uptimeOK bool) (float64, bool) {
 	seconds := elapsed.Seconds()
