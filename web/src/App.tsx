@@ -9,7 +9,7 @@ import { api, type Alarm, type AlertSettings, type Candidate, type DismissedCand
 
 type Selection = { kind: 'device' | 'link'; id: number } | null
 type ExternalTraffic = { inbound: number | null; outbound: number | null; capacity: number }
-type NetworkNode = Node<{ device: Device; traffic: number | null; external?: ExternalTraffic }>
+type NetworkNode = Node<{ device: Device; traffic: { rx: number; tx: number } | null; external?: ExternalTraffic }>
 
 function formatRate(value: number | null | undefined) {
   if (value == null || !Number.isFinite(value)) return '–'
@@ -48,11 +48,11 @@ function NetworkDevice({ data, selected }: NodeProps<NetworkNode>) {
     </div>
     <div className="node-meta"><span>{deviceKind(device)}</span>{external ? external.capacity > 0 && <span>{server ? 'nätkort' : 'avtal'} {formatRate(external.capacity)}</span> : <span className="mono" title={addressLabel(device)}>{device.address}</span>}</div>
     {device.location && <div className="node-location" title={device.location}><MapPin size={11}/><span>{device.location}</span></div>}
-    <div className={`node-rate ${external && !offline ? 'node-rate-split' : ''}`}>{offline ? <span className="node-fault"><AlertTriangle size={12}/> Svarar inte</span> : external
+    <div className={`node-rate ${!offline ? 'node-rate-split' : ''}`}>{offline ? <span className="node-fault"><AlertTriangle size={12}/> Svarar inte</span> : external
       ? server
         ? <><span title="Till servern">↓ {formatRate(external.outbound)}</span><span title="Från servern">↑ {formatRate(external.inbound)}</span></>
         : <><span title="In till nätet">↓ {formatRate(external.inbound)}</span><span title="Ut från nätet">↑ {formatRate(external.outbound)}</span></>
-      : <span title="Mottaget på alla portar">↓ {formatRate(traffic)}</span>}</div>
+      : <><span title="Mottaget på alla portar">↓ {formatRate(traffic?.rx ?? null)}</span><span title="Skickat på alla portar">↑ {formatRate(traffic?.tx ?? null)}</span></>}</div>
     <Handle type="source" position={Position.Bottom} className="flow-handle" />
   </div>
 }
@@ -330,7 +330,7 @@ export default function App() {
   useEffect(() => { api('/me').then(() => setAuthenticated(true)).catch(() => setAuthenticated(false)) }, [])
   useEffect(() => { if (!authenticated) return; refresh(); const timer = setInterval(refresh, 15000); return () => clearInterval(timer) }, [authenticated, refresh])
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 5000); return () => clearInterval(timer) }, [])
-  useEffect(() => { if (!topology) return; setNodes(existing => { let arranged: ReturnType<typeof arrangeMap> | undefined; return topology.devices.map(device => { const old = existing.find(n => n.id === String(device.id)); const saved = device.x != null && device.y != null ? { x: device.x, y: device.y } : undefined; const current = topology.interfaces.filter(i => i.deviceId === device.id && i.lastSample && topology.serverTime - i.lastSample <= 45 && i.rxBps != null); const position = old?.position || saved || (arranged ??= arrangeMap(topology.devices, topology.interfaces, topology.links)).get(device.id) || { x: 0, y: 0 }; return { id: String(device.id), type: 'networkDevice', position, data: { device, traffic: current.length ? current.reduce((sum, i) => sum + (i.rxBps || 0), 0) : null, external: device.os === 'external' ? externalTraffic(topology, device) : undefined }, selected: selection?.kind === 'device' && selection.id === device.id } }) }) }, [topology, selection, setNodes])
+  useEffect(() => { if (!topology) return; setNodes(existing => { let arranged: ReturnType<typeof arrangeMap> | undefined; return topology.devices.map(device => { const old = existing.find(n => n.id === String(device.id)); const saved = device.x != null && device.y != null ? { x: device.x, y: device.y } : undefined; const current = topology.interfaces.filter(i => i.deviceId === device.id && i.lastSample && topology.serverTime - i.lastSample <= 45 && i.rxBps != null); const position = old?.position || saved || (arranged ??= arrangeMap(topology.devices, topology.interfaces, topology.links)).get(device.id) || { x: 0, y: 0 }; return { id: String(device.id), type: 'networkDevice', position, data: { device, traffic: current.length ? current.reduce((sum, i) => ({ rx: sum.rx + (i.rxBps || 0), tx: sum.tx + (i.txBps || 0) }), { rx: 0, tx: 0 }) : null, external: device.os === 'external' ? externalTraffic(topology, device) : undefined }, selected: selection?.kind === 'device' && selection.id === device.id } }) }) }, [topology, selection, setNodes])
   const flow = useRef<ReactFlowInstance<NetworkNode, TrafficEdge> | null>(null)
   async function savePositions(positions: { id: number; x: number; y: number }[]) { try { await api('/layout', { method: 'PUT', body: JSON.stringify({ positions }) }) } catch (e) { setError((e as Error).message) } }
   function arrange() { if (!topology) return; const positions = arrangeMap(topology.devices, topology.interfaces, topology.links); setNodes(existing => existing.map(n => ({ ...n, position: positions.get(Number(n.id)) || n.position }))); requestAnimationFrame(() => flow.current?.fitView({ padding: 0.15, duration: 300 })); savePositions([...positions].map(([id, p]) => ({ id, ...p }))) }
