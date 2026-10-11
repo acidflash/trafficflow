@@ -146,6 +146,10 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 /* Map */
 .map-area { position: relative; min-width: 0; background: var(--bg); overflow: hidden }
 .map-toolbar { position: absolute; z-index: 4; top: 12px; right: 12px; display: flex; gap: 8px; align-items: center }
+.panel-toggle { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: var(--radius); background: oklch(19.5% .009 var(--hue) / .92); border: 1px solid var(--line); color: var(--text-3); transition: background-color .15s var(--ease), color .15s var(--ease) }
+.panel-toggle:hover { background: var(--hover); color: var(--text) }
+.panel-toggle-left { position: absolute; z-index: 4; top: 12px; left: 12px }
+.app-shell:not(.is-phone) .toast-error { left: 54px }
 .map-key { display: flex; gap: 12px; align-items: center; height: 34px; padding: 0 11px; border-radius: var(--radius); background: oklch(19.5% .009 var(--hue) / .92); border: 1px solid var(--line); font-size: 11px; color: var(--text-3) }
 .key-scale { display: flex; gap: 2px }
 .key-scale i { width: 14px; height: 5px; border-radius: 1px }
