@@ -599,3 +599,18 @@ func TestReciprocalDiscoveryAndSuppression(t *testing.T) {
 		t.Fatal("dismissed discovery recreated a link")
 	}
 }
+
+func TestPollTargetFallsBackOnDNSFailure(t *testing.T) {
+	// .invalid never resolves (RFC 6761).
+	target, warning, err := pollTarget(t.Context(), deviceConfig{Address: "sw1.invalid", Resolved: "192.0.2.13"})
+	if err != nil || target != "192.0.2.13" || !strings.Contains(warning, "192.0.2.13") {
+		t.Fatalf("want fallback to the last address, got %q %q %v", target, warning, err)
+	}
+	if _, _, err := pollTarget(t.Context(), deviceConfig{Address: "sw1.invalid"}); err == nil {
+		t.Fatal("a name that never resolved should fail")
+	}
+	target, warning, err = pollTarget(t.Context(), deviceConfig{Address: "192.0.2.7", Resolved: "192.0.2.13"})
+	if err != nil || target != "192.0.2.7" || warning != "" {
+		t.Fatalf("an IP address is used as is, got %q %q %v", target, warning, err)
+	}
+}

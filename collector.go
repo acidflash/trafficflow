@@ -31,6 +31,7 @@ var authProtocols = map[string]gosnmp.SnmpV3AuthProtocol{"MD5": gosnmp.MD5, "SHA
 type deviceConfig struct {
 	ID                         int64
 	Name, Address, OS, Version string
+	Resolved                   string // the address the latest successful poll used
 	WebUser                    string
 	Credential                 []byte
 }
@@ -79,7 +80,7 @@ func (c *collector) run(ctx context.Context) {
 }
 
 func (c *collector) pollAll(ctx context.Context, metadata bool, start time.Time) {
-	rows, err := c.store.db.QueryContext(ctx, "SELECT id,name,address,os,snmp_version,web_user,credential FROM devices WHERE os!='external'")
+	rows, err := c.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,os,snmp_version,web_user,credential FROM devices WHERE os!='external'")
 	if err != nil {
 		log.Printf("list devices: %v", err)
 		return
@@ -87,7 +88,7 @@ func (c *collector) pollAll(ctx context.Context, metadata bool, start time.Time)
 	var devices []deviceConfig
 	for rows.Next() {
 		var d deviceConfig
-		if err := rows.Scan(&d.ID, &d.Name, &d.Address, &d.OS, &d.Version, &d.WebUser, &d.Credential); err == nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.Address, &d.Resolved, &d.OS, &d.Version, &d.WebUser, &d.Credential); err == nil {
 			devices = append(devices, d)
 		}
 	}
@@ -158,6 +159,20 @@ func resolveAddress(ctx context.Context, address string) (string, error) {
 		return "", fmt.Errorf("DNS lookup for %s returned no addresses", address)
 	}
 	return addrs[0].IP.String(), nil
+}
+
+// pollTarget resolves the device on every poll so a changed DNS record is picked up. When DNS
+// fails it falls back to the last address that worked, with a warning, so a DNS outage does not
+// report every switch as down.
+func pollTarget(ctx context.Context, d deviceConfig) (target, warning string, err error) {
+	target, err = resolveAddress(ctx, d.Address)
+	if err == nil {
+		return target, "", nil
+	}
+	if d.Resolved == "" || d.Resolved == d.Address {
+		return "", "", err
+	}
+	return d.Resolved, fmt.Sprintf("DNS-namnet %s kunde inte slås upp – använder senast kända adress %s", d.Address, d.Resolved), nil
 }
 
 func snmpClient(target string, d deviceConfig, secret credential) (*gosnmp.GoSNMP, error) {
@@ -256,8 +271,7 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 	if err := json.Unmarshal([]byte(plain), &secret); err != nil {
 		return err
 	}
-	// Resolve on every poll so a changed DNS record is picked up.
-	target, err := resolveAddress(ctx, d.Address)
+	target, warning, err := pollTarget(ctx, d)
 	if err != nil {
 		return err
 	}
@@ -279,7 +293,7 @@ func (c *collector) pollDevice(ctx context.Context, d deviceConfig, metadata boo
 		name = d.Name
 	}
 	location := strings.TrimSpace(pduString(packet.Variables[2]))
-	_, err = c.store.db.ExecContext(ctx, "UPDATE devices SET name=?,location=?,resolved=?,status='online',last_seen=?,uptime=?,last_error='' WHERE id=?", name, location, target, time.Now().Unix(), uptime, d.ID)
+	_, err = c.store.db.ExecContext(ctx, "UPDATE devices SET name=?,location=?,resolved=?,status='online',last_seen=?,uptime=?,last_error=? WHERE id=?", name, location, target, time.Now().Unix(), uptime, warning, d.ID)
 	if err != nil {
 		return err
 	}
