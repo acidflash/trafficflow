@@ -273,9 +273,19 @@ func (a *alerter) evaluate(ctx context.Context) {
 		}
 	}
 	rows.Close()
-	type openAlarm struct{ id, started int64 }
+	// During maintenance new alarms are recorded but not sent. One still open when maintenance
+	// ends is sent then; one that clears before that closes quietly.
+	until, err := a.store.maintenanceUntil(ctx, time.Unix(now, 0))
+	if err != nil {
+		log.Printf("alerts: %v", err)
+	}
+	muted := !until.IsZero()
+	type openAlarm struct {
+		id, started int64
+		quiet       bool
+	}
 	open := map[string]openAlarm{}
-	rows, err = a.store.db.QueryContext(ctx, "SELECT id,kind,device_id,interface_id,started_at FROM alarms WHERE cleared_at IS NULL")
+	rows, err = a.store.db.QueryContext(ctx, "SELECT id,kind,device_id,interface_id,started_at,quiet FROM alarms WHERE cleared_at IS NULL")
 	if err != nil {
 		log.Printf("alerts: %v", err)
 		return
@@ -284,7 +294,7 @@ func (a *alerter) evaluate(ctx context.Context) {
 		var x openAlarm
 		var kind string
 		var deviceID, interfaceID sql.NullInt64
-		if rows.Scan(&x.id, &kind, &deviceID, &interfaceID, &x.started) == nil {
+		if rows.Scan(&x.id, &kind, &deviceID, &interfaceID, &x.started, &x.quiet) == nil {
 			switch kind {
 			case "port":
 				open[fmt.Sprintf("p:%d", interfaceID.Int64)] = x
@@ -311,14 +321,26 @@ func (a *alerter) evaluate(ctx context.Context) {
 		case t.down:
 			delete(a.clean, t.key)
 			a.misses[t.key]++
-			if a.misses[t.key] < alertAfterMisses || isOpen {
+			if isOpen {
+				if alarm.quiet && !muted {
+					if _, err := a.store.db.ExecContext(ctx, "UPDATE alarms SET quiet=0 WHERE id=?", alarm.id); err != nil {
+						log.Printf("alerts: %v", err)
+						continue
+					}
+					events = append(events, alertEvent{Down: true, Kind: t.kind, Title: t.title, Address: t.address, Detail: t.detail, Since: alarm.started, At: now})
+				}
 				continue
 			}
-			if _, err := a.store.db.ExecContext(ctx, "INSERT INTO alarms(kind,device_id,interface_id,title,started_at) VALUES(?,?,?,?,?)", t.kind, t.deviceID, t.interfaceID, t.title, now); err != nil {
+			if a.misses[t.key] < alertAfterMisses {
+				continue
+			}
+			if _, err := a.store.db.ExecContext(ctx, "INSERT INTO alarms(kind,device_id,interface_id,title,started_at,quiet) VALUES(?,?,?,?,?,?)", t.kind, t.deviceID, t.interfaceID, t.title, now, muted); err != nil {
 				log.Printf("alerts: %v", err)
 				continue
 			}
-			events = append(events, alertEvent{Down: true, Kind: t.kind, Title: t.title, Address: t.address, Detail: t.detail, Since: now, At: now})
+			if !muted {
+				events = append(events, alertEvent{Down: true, Kind: t.kind, Title: t.title, Address: t.address, Detail: t.detail, Since: now, At: now})
+			}
 		default:
 			delete(a.misses, t.key)
 			if !isOpen {
@@ -331,6 +353,10 @@ func (a *alerter) evaluate(ctx context.Context) {
 			delete(a.clean, t.key)
 			if _, err := a.store.db.ExecContext(ctx, "UPDATE alarms SET cleared_at=? WHERE id=?", now, alarm.id); err != nil {
 				log.Printf("alerts: %v", err)
+				continue
+			}
+			// Nobody heard about a quiet alarm, so its recovery is not news either.
+			if alarm.quiet {
 				continue
 			}
 			events = append(events, alertEvent{Kind: t.kind, Title: t.title, Address: t.address, Since: alarm.started, At: now})

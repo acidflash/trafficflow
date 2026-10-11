@@ -93,6 +93,11 @@ func openStore() (*store, error) {
 			device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
 			interface_id INTEGER REFERENCES interfaces(id) ON DELETE CASCADE,
 			title TEXT NOT NULL, started_at INTEGER NOT NULL, cleared_at INTEGER)`,
+		// Maintenance windows silence new alarms: one-time (starts_at/ends_at) or weekly, where
+		// days is a bitmask of time.Weekday and start_min/end_min are minutes past local midnight.
+		`CREATE TABLE IF NOT EXISTS maintenance (
+			id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '', starts_at INTEGER, ends_at INTEGER,
+			days INTEGER NOT NULL DEFAULT 0, start_min INTEGER NOT NULL DEFAULT 0, end_min INTEGER NOT NULL DEFAULT 0)`,
 		"CREATE INDEX IF NOT EXISTS samples_ts ON samples(ts)",
 		"CREATE INDEX IF NOT EXISTS rollups_minute ON rollups(minute)",
 	} {
@@ -116,6 +121,8 @@ func openStore() (*store, error) {
 		"ALTER TABLE interfaces ADD COLUMN rx_pause REAL",
 		// SwOS web login user; the password lives in the encrypted credential. Empty means none.
 		"ALTER TABLE devices ADD COLUMN web_user TEXT NOT NULL DEFAULT ''",
+		// An alarm that opened during maintenance and has not been sent.
+		"ALTER TABLE alarms ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0",
 	} {
 		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			db.Close()
@@ -174,6 +181,7 @@ func (s *store) cleanup(ctx context.Context) error {
 		{"DELETE FROM candidates WHERE last_seen < ?", now - 15*60},
 		{"DELETE FROM fdb WHERE last_seen < ?", now - 30*60},
 		{"DELETE FROM alarms WHERE cleared_at < ?", now - 30*86400},
+		{"DELETE FROM maintenance WHERE ends_at < ?", now - 86400},
 	} {
 		if _, err := s.db.ExecContext(ctx, q.sql, q.before); err != nil {
 			return err

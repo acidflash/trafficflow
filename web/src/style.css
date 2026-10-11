@@ -287,6 +287,24 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .alarm-history > div { display: flex; flex-direction: column; gap: 1px; min-width: 0 }
 .alarm-history strong { font-size: 11.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .alarm-history small { font-size: 10.5px; color: var(--text-3) }
+.maintenance-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px }
+.maintenance-active { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--warn) }
+.maintenance-list { display: grid; gap: 4px }
+.maintenance-list > div { display: flex; align-items: center; gap: 8px; padding: 6px 4px 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg) }
+.maintenance-list span { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 }
+.maintenance-list strong { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.maintenance-list small { font-size: 11px; color: var(--text-3) }
+.maintenance-editor { display: grid; gap: 10px }
+.segmented, .weekdays { display: grid; gap: 4px }
+.segmented { grid-template-columns: 1fr 1fr }
+.weekdays { grid-template-columns: repeat(7, minmax(0, 1fr)) }
+.segmented button, .weekdays button { min-height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text-2); font-size: 11.5px; font-weight: 600; transition: background-color .15s var(--ease), border-color .15s var(--ease) }
+.segmented button:hover, .weekdays button:hover { border-color: var(--line-strong) }
+.segmented button.on, .weekdays button.on { background: var(--text); border-color: var(--text); color: var(--bg) }
+.field-pair.even { grid-template-columns: 1fr 1fr }
+.button-row { display: flex; gap: 8px }
+.secondary.quiet { background: transparent; border-color: transparent; color: var(--text-3) }
+.add-maintenance { justify-self: start; gap: 6px; min-height: 30px; padding: 5px 10px; font-size: 12px }
 
 /* Login */
 .login-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--bg) }

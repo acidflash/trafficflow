@@ -67,6 +67,9 @@ func main() {
 	mux.HandleFunc("GET /api/alert-settings", app.authed(app.alertSettings))
 	mux.HandleFunc("PUT /api/alert-settings", app.authed(app.saveAlertSettings))
 	mux.HandleFunc("POST /api/alert-settings/test", app.authed(app.testAlertSettings))
+	mux.HandleFunc("GET /api/maintenance", app.authed(app.maintenance))
+	mux.HandleFunc("POST /api/maintenance", app.authed(app.addMaintenance))
+	mux.HandleFunc("DELETE /api/maintenance/{id}", app.authed(app.deleteMaintenance))
 	static, _ := fs.Sub(webFiles, "web/dist")
 	mux.Handle("/", spa(static))
 	addr := ":8080"
@@ -359,7 +362,11 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "Kunde inte läsa larm")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"devices": devices, "interfaces": interfaces, "links": links, "candidates": candidates, "dismissedCandidates": dismissed, "alarms": active, "serverTime": time.Now().Unix()})
+	var maintenanceUntil int64
+	if until, err := a.store.maintenanceUntil(ctx, time.Now()); err == nil && !until.IsZero() {
+		maintenanceUntil = until.Unix()
+	}
+	writeJSON(w, 200, map[string]any{"devices": devices, "interfaces": interfaces, "links": links, "candidates": candidates, "dismissedCandidates": dismissed, "alarms": active, "maintenanceUntil": maintenanceUntil, "serverTime": time.Now().Unix()})
 }
 
 // deviceAddress normalizes an IP address or DNS name and resolves it from the server.
@@ -883,18 +890,19 @@ type alarmView struct {
 	Title       string `json:"title"`
 	StartedAt   int64  `json:"startedAt"`
 	ClearedAt   *int64 `json:"clearedAt"`
+	Quiet       bool   `json:"quiet"` // opened during maintenance and not sent
 }
 
 func (a *server) listAlarms(ctx context.Context, where string) ([]alarmView, error) {
 	list := []alarmView{}
-	rows, err := a.store.db.QueryContext(ctx, "SELECT id,kind,device_id,interface_id,title,started_at,cleared_at FROM alarms WHERE "+where)
+	rows, err := a.store.db.QueryContext(ctx, "SELECT id,kind,device_id,interface_id,title,started_at,cleared_at,quiet FROM alarms WHERE "+where)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var x alarmView
-		if err := rows.Scan(&x.ID, &x.Kind, &x.DeviceID, &x.InterfaceID, &x.Title, &x.StartedAt, &x.ClearedAt); err != nil {
+		if err := rows.Scan(&x.ID, &x.Kind, &x.DeviceID, &x.InterfaceID, &x.Title, &x.StartedAt, &x.ClearedAt, &x.Quiet); err != nil {
 			return nil, err
 		}
 		list = append(list, x)

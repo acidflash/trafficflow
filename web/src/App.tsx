@@ -5,7 +5,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import '@xyflow/react/dist/style.css'
 import { arrangeMap } from './layout'
 import { DeviceIcon, TopologyMark, deviceKind } from './icons'
-import { api, type Alarm, type AlertSettings, type Candidate, type DismissedCandidate, type Device, type Interface, type Point, type Topology } from './api'
+import { api, type Alarm, type AlertSettings, type Maintenance, type MaintenanceWindow, type Candidate, type DismissedCandidate, type Device, type Interface, type Point, type Topology } from './api'
 
 type Selection = { kind: 'device' | 'link'; id: number } | null
 type ExternalTraffic = { inbound: number | null; outbound: number | null; capacity: number }
@@ -171,6 +171,54 @@ function since(seconds: number) { const m = Math.max(0, Math.round(seconds / 60)
 
 type Channel = 'discord' | 'email'
 
+// Monday first, as a Swedish calendar; values are JavaScript/Go weekdays (0 = Sunday).
+const WEEKDAYS: [number, string][] = [[1, 'Mån'], [2, 'Tis'], [3, 'Ons'], [4, 'Tor'], [5, 'Fre'], [6, 'Lör'], [0, 'Sön']]
+const clock = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
+const minutes = (value: string) => { const [h, m] = value.split(':').map(Number); return h * 60 + m }
+const localInput = (ts: number) => { const d = new Date(ts * 1000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16) }
+const shortTime = (ts: number) => new Date(ts * 1000).toLocaleString('sv-SE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+function describeWindow(m: MaintenanceWindow) {
+  if (m.startsAt !== null && m.endsAt !== null) return `${shortTime(m.startsAt)} – ${shortTime(m.endsAt)}`
+  const days = m.days.length === 7 ? 'Varje dag' : WEEKDAYS.filter(([d]) => m.days.includes(d)).map(([, name]) => name).join(', ')
+  return `${days} ${clock(m.startMin)}–${clock(m.endMin)}${m.endMin <= m.startMin ? ' (nästa dygn)' : ''}`
+}
+
+// Lives inside the alert form, so it uses plain buttons instead of a nested form.
+// Refetches when the topology reports maintenance starting or ending.
+function MaintenanceSection({ until }: { until: number }) {
+  const [state, setState] = useState<Maintenance | null>(null), [editing, setEditing] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+  const [mode, setMode] = useState<'once' | 'weekly'>('once'), [name, setName] = useState(''), [start, setStart] = useState(''), [end, setEnd] = useState(''), [days, setDays] = useState<number[]>([]), [from, setFrom] = useState('22:00'), [to, setTo] = useState('02:00')
+  useEffect(() => { api<Maintenance>('/maintenance').then(setState).catch(e => setError((e as Error).message)) }, [until])
+  function open() { const now = Math.floor(Date.now() / 60000) * 60; setStart(localInput(now)); setEnd(localInput(now + 3600)); setName(''); setDays([]); setError(''); setEditing(true) }
+  async function add() {
+    const body = mode === 'once'
+      ? { name, startsAt: start ? Math.floor(new Date(start).getTime() / 1000) : null, endsAt: end ? Math.floor(new Date(end).getTime() / 1000) : null }
+      : { name, days, startMin: minutes(from), endMin: minutes(to) }
+    setBusy(true); setError('')
+    try { setState(await api<Maintenance>('/maintenance', { method: 'POST', body: JSON.stringify(body) })); setEditing(false) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  async function remove(id: number) { setError(''); try { setState(await api<Maintenance>(`/maintenance/${id}`, { method: 'DELETE' })) } catch (e) { setError((e as Error).message) } }
+  const toggleDay = (d: number) => setDays(list => list.includes(d) ? list.filter(x => x !== d) : [...list, d])
+  return <fieldset className="channel maintenance"><div className="maintenance-head"><strong>Underhåll</strong>{state && state.until > 0 && <span className="maintenance-active"><BellOff size={12}/> Tyst till {new Date(state.until * 1000).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</span>}</div>
+    <small className="field-hint">Nya larm skickas inte under underhåll. Det som fortfarande är fel när fönstret slutar skickas då.</small>
+    {state && state.windows.length > 0 && <div className="maintenance-list">{state.windows.map(m => <div key={m.id}><span><strong>{m.name || (m.startsAt !== null ? 'En gång' : 'Schema')}</strong><small>{describeWindow(m)}</small></span><button type="button" className="icon-button" aria-label={`Ta bort ${m.name || describeWindow(m)}`} title="Ta bort" onClick={() => remove(m.id)}><Trash2 size={14}/></button></div>)}</div>}
+    {editing ? <div className="maintenance-editor" onKeyDown={e => { if (e.key === 'Enter' && e.target instanceof HTMLInputElement) { e.preventDefault(); add() } }}>
+      <div className="segmented" role="radiogroup" aria-label="Typ av underhåll">{(['once', 'weekly'] as const).map(m => <button type="button" key={m} role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{m === 'once' ? 'En gång' : 'Schema'}</button>)}</div>
+      <label>Namn (valfritt)<input value={name} onChange={e => setName(e.target.value)} maxLength={80} placeholder="Firmware-uppgradering"/></label>
+      {mode === 'once' ? <>
+        <label>Start<input type="datetime-local" value={start} onChange={e => setStart(e.target.value)}/></label>
+        <label>Slut<input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)}/></label>
+      </> : <>
+        <div className="weekdays" role="group" aria-label="Veckodagar">{WEEKDAYS.map(([d, label]) => <button type="button" key={d} aria-pressed={days.includes(d)} className={days.includes(d) ? 'on' : ''} onClick={() => toggleDay(d)}>{label}</button>)}</div>
+        <div className="field-pair even"><label>Från<input type="time" value={from} onChange={e => setFrom(e.target.value)}/></label><label>Till<input type="time" value={to} onChange={e => setTo(e.target.value)}/></label></div>
+        {from && to && minutes(to) <= minutes(from) && <small className="field-hint">Slutar {to} dygnet efter.</small>}
+      </>}
+      <div className="button-row"><button type="button" className="secondary" disabled={busy} onClick={add}>{busy ? 'Sparar…' : 'Lägg till'}</button><button type="button" className="secondary quiet" onClick={() => { setEditing(false); setError('') }}>Avbryt</button></div>
+    </div> : <button type="button" className="secondary add-maintenance" onClick={open}><Plus size={14}/> Lägg till underhåll</button>}
+    {error && <div className="form-error" role="alert">{error}</div>}
+  </fieldset>
+}
+
 function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSelect: (deviceId: number) => void; onCancel: () => void }) {
   const [settings, setSettings] = useState<AlertSettings | null>(null), [recent, setRecent] = useState<Alarm[]>([]), [webhook, setWebhook] = useState(''), [password, setPassword] = useState(''), [to, setTo] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [showHistory, setShowHistory] = useState(false)
   const [testing, setTesting] = useState<Channel | null>(null), [results, setResults] = useState<Partial<Record<Channel, { ok: boolean; text: string }>>>({})
@@ -193,7 +241,8 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
   const testButton = (channel: Channel) => <div className="channel-test"><button type="button" className="secondary" disabled={busy || testing !== null} onClick={() => test(channel)}><Send size={14}/> {testing === channel ? 'Skickar…' : channel === 'discord' ? 'Testa Discord' : 'Testa e-post'}</button>{results[channel] && <span className={results[channel]!.ok ? 'test-ok' : 'test-fail'} role="status">{results[channel]!.text}</span>}</div>
   const alarms = topology.alarms
   return <form className="inline-form alert-panel" onSubmit={submit}><FormTitle title="Larm" onCancel={onCancel}/>
-    {alarms.length ? <div className="alarm-list">{alarms.map(a => <button type="button" key={a.id} className="alarm-item" onClick={() => a.deviceId && onSelect(a.deviceId)}><span className="status-dot offline"/><span><strong>{a.title}</strong><small>{a.kind === 'device' ? 'Svarar inte' : a.kind === 'errors' ? 'Många RX/TX-fel' : a.kind === 'pause' ? 'Många RX pause' : 'Porten är nere'} · {since(topology.serverTime - a.startedAt)}</small></span></button>)}</div> : <p className="muted">Inga aktiva larm. Enheter som slutar svara och länkportar som går ner eller får många RX/TX-fel eller RX pause larmar efter ungefär 30 sekunder.</p>}
+    {alarms.length ? <div className="alarm-list">{alarms.map(a => <button type="button" key={a.id} className="alarm-item" onClick={() => a.deviceId && onSelect(a.deviceId)}><span className="status-dot offline"/><span><strong>{a.title}</strong><small>{a.kind === 'device' ? 'Svarar inte' : a.kind === 'errors' ? 'Många RX/TX-fel' : a.kind === 'pause' ? 'Många RX pause' : 'Porten är nere'} · {since(topology.serverTime - a.startedAt)}{a.quiet && ' · tyst under underhåll'}</small></span></button>)}</div> : <p className="muted">Inga aktiva larm. Enheter som slutar svara och länkportar som går ner eller får många RX/TX-fel eller RX pause larmar efter ungefär 30 sekunder.</p>}
+    <MaintenanceSection until={topology.maintenanceUntil}/>
     {settings ? <>
       <label>Larma vid RX/TX-fel per minut<input value={settings.errorsPerMinute} onChange={e => set({ errorsPerMinute: Number(e.target.value) })} type="number" min={0} max={1000000} required/><small className="field-hint">Gäller länkportar och portar med larm på. 0 stänger av fellarmet.</small></label>
       <label>Larma vid RX pause per minut<input value={settings.pausePerMinute} onChange={e => set({ pausePerMinute: Number(e.target.value) })} type="number" min={0} max={100000000} required/><small className="field-hint">Pause-ramar som grannen skickar när den inte hinner ta emot. 0 stänger av pauselarmet.</small></label>
@@ -407,7 +456,7 @@ export default function App() {
   const updated = topology ? new Date(topology.serverTime * 1000).toLocaleTimeString('sv-SE') : ''
   return <div className={`app-shell ${phone ? 'is-phone' : ''}`}><header className="topbar"><div className="brand"><span className="brand-icon"><TopologyMark size={18}/></span><strong>Trafficflow</strong></div><div className="topbar-actions">
       <span className={`live-indicator ${stale ? 'is-stale' : ''}`} title="Kartan hämtas var 15:e sekund">{stale ? <><AlertTriangle size={13}/> Ingen kontakt <span className="live-long">sedan </span>{new Date(lastContact).toLocaleTimeString('sv-SE')}</> : <><span className="pulse"/> {topology ? <><span className="live-long">Uppdaterad </span>{updated}</> : 'Ansluter…'}</>}</span>
-      {!phone && <button className={`icon-button alarm-button ${alarmCount ? 'has-alarms' : ''}`} title={alarmCount ? `${alarmCount} aktiva larm` : 'Larm och aviseringar'} aria-label={alarmCount ? `${alarmCount} aktiva larm` : 'Larm och aviseringar'} aria-expanded={panel === 'alerts'} onClick={() => setPanel(panel === 'alerts' ? null : 'alerts')}>{alarmCount ? <BellRing size={16}/> : <Bell size={16}/>}{alarmCount > 0 && <span className="alarm-count">{alarmCount}</span>}</button>}<button className="icon-button" title="Uppdatera nu" aria-label="Uppdatera nu" onClick={refresh}><RefreshCw size={16}/></button><button className="icon-button" title="Logga ut" aria-label="Logga ut" onClick={logout}><LogOut size={16}/></button></div></header>
+      {!phone && <button className={`icon-button alarm-button ${alarmCount ? 'has-alarms' : ''}`} title={alarmCount ? `${alarmCount} aktiva larm` : topology?.maintenanceUntil ? 'Underhåll pågår – larm skickas inte' : 'Larm och aviseringar'} aria-label={alarmCount ? `${alarmCount} aktiva larm` : 'Larm och aviseringar'} aria-expanded={panel === 'alerts'} onClick={() => setPanel(panel === 'alerts' ? null : 'alerts')}>{alarmCount ? <BellRing size={16}/> : topology?.maintenanceUntil ? <BellOff size={16}/> : <Bell size={16}/>}{alarmCount > 0 && <span className="alarm-count">{alarmCount}</span>}</button>}<button className="icon-button" title="Uppdatera nu" aria-label="Uppdatera nu" onClick={refresh}><RefreshCw size={16}/></button><button className="icon-button" title="Logga ut" aria-label="Logga ut" onClick={logout}><LogOut size={16}/></button></div></header>
     {phone && health}
     <div className="workspace" data-view={phone ? view : undefined}><aside className="sidebar">
       {!phone && health}
@@ -427,7 +476,7 @@ export default function App() {
       {error && <div className="toast-error" role="alert"><AlertTriangle size={16}/>{error}<button onClick={() => setError('')} aria-label="Stäng fel"><X size={15}/></button></div>}
       {topology && topology.devices.length ? <SelectLink.Provider value={id => show({ kind: 'link', id })}><ReactFlow key={topology.devices.map(d => d.id).join(',')} colorMode="dark" nodes={nodes} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onInit={instance => { flow.current = instance; requestAnimationFrame(() => instance.fitView({ padding: 0.2 })) }} onNodeDragStop={(_, __, dragged) => savePositions(dragged.map(n => ({ id: Number(n.id), ...n.position })))} onNodeClick={(_, node) => show({kind:'device',id:Number(node.id)})} onEdgeClick={(_, edge) => show({kind:'link',id:Number(edge.id)})} onPaneClick={() => setSelection(null)} fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.08} maxZoom={1.8} nodesDraggable={!phone} nodesConnectable={false} edgesReconnectable={false} proOptions={{ hideAttribution: true }}><Background color="oklch(30% .01 165)" gap={28} size={1}/><Controls showInteractive={false} showZoom={!phone}/></ReactFlow></SelectLink.Provider>
         : topology && <div className="map-empty"><TopologyMark size={30}/><h3>Kartan är tom</h3><p>Lägg till routrar och switchar med IP-adress eller DNS-namn. Portar och länkar hämtas när SNMP svarar.</p><button className="primary" onClick={() => { setPanel('device'); setView('devices') }}><Plus size={16}/> Lägg till första enheten</button></div>}
-    </main><DetailPanel topology={topology || {devices:[],interfaces:[],links:[],candidates:[],dismissedCandidates:[],alarms:[],serverTime:0}} selection={selection} sheet={phone ? { expanded: sheetExpanded, onExpand: setSheetExpanded } : undefined} onClose={() => setSelection(null)} onDelete={() => { setSelection(null); refresh() }} onSaved={refresh} onError={setError}/></div>
+    </main><DetailPanel topology={topology || {devices:[],interfaces:[],links:[],candidates:[],dismissedCandidates:[],alarms:[],maintenanceUntil:0,serverTime:0}} selection={selection} sheet={phone ? { expanded: sheetExpanded, onExpand: setSheetExpanded } : undefined} onClose={() => setSelection(null)} onDelete={() => { setSelection(null); refresh() }} onSaved={refresh} onError={setError}/></div>
     {phone && <nav className="tabbar" aria-label="Vyer">
       <button aria-current={view === 'map' ? 'page' : undefined} onClick={() => setView('map')}><MapIcon size={20} strokeWidth={1.7}/>Karta</button>
       <button aria-current={view === 'devices' ? 'page' : undefined} onClick={() => setView('devices')}><List size={20} strokeWidth={1.7}/>Enheter{activeCandidates.length > 0 && <span className="tab-count" aria-label={`${activeCandidates.length} länkförslag`}>{activeCandidates.length}</span>}</button>
