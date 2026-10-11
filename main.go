@@ -245,6 +245,8 @@ type deviceView struct {
 	LastError   string   `json:"lastError"`
 	X           *float64 `json:"x"`
 	Y           *float64 `json:"y"`
+	// MaintenanceUntil is when maintenance covering this device ends; 0 when none is running.
+	MaintenanceUntil int64 `json:"maintenanceUntil"`
 }
 type interfaceView struct {
 	ID          int64    `json:"id"`
@@ -362,11 +364,22 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "Kunde inte läsa larm")
 		return
 	}
-	var maintenanceUntil int64
-	if until, err := a.store.maintenanceUntil(ctx, time.Now()); err == nil && !until.IsZero() {
-		maintenanceUntil = until.Unix()
+	var allUntil int64
+	if windows, err := a.store.maintenanceWindows(ctx); err == nil {
+		now := time.Now()
+		if until := maintenanceUntil(windows, now, 0); !until.IsZero() {
+			allUntil = until.Unix()
+		}
+		for i := range devices {
+			if devices[i].OS == "external" {
+				continue
+			}
+			if until := maintenanceUntil(windows, now, devices[i].ID); !until.IsZero() {
+				devices[i].MaintenanceUntil = until.Unix()
+			}
+		}
 	}
-	writeJSON(w, 200, map[string]any{"devices": devices, "interfaces": interfaces, "links": links, "candidates": candidates, "dismissedCandidates": dismissed, "alarms": active, "maintenanceUntil": maintenanceUntil, "serverTime": time.Now().Unix()})
+	writeJSON(w, 200, map[string]any{"devices": devices, "interfaces": interfaces, "links": links, "candidates": candidates, "dismissedCandidates": dismissed, "alarms": active, "maintenanceUntil": allUntil, "serverTime": time.Now().Unix()})
 }
 
 // deviceAddress normalizes an IP address or DNS name and resolves it from the server.

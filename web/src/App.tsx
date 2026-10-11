@@ -45,6 +45,7 @@ function NetworkDevice({ data, selected }: NodeProps<NetworkNode>) {
     <div className="node-head">
       <span className="node-icon"><DeviceIcon device={device} size={17}/>{device.os !== 'external' && <span className={`status-dot ${device.status}`}/>}</span>
       <strong title={device.name}>{device.name}</strong>
+      {device.maintenanceUntil > 0 && <span className="node-maintenance" title={`Underhåll till ${new Date(device.maintenanceUntil * 1000).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}`}><BellOff size={12}/></span>}
     </div>
     <div className="node-meta"><span>{deviceKind(device)}</span>{external ? external.capacity > 0 && <span>{server ? 'nätkort' : 'avtal'} {formatRate(external.capacity)}</span> : <span className="mono" title={addressLabel(device)}>{device.address}</span>}</div>
     {device.location && <div className="node-location" title={device.location}><MapPin size={11}/><span>{device.location}</span></div>}
@@ -184,26 +185,32 @@ function describeWindow(m: MaintenanceWindow) {
 }
 
 // Lives inside the alert form, so it uses plain buttons instead of a nested form.
-// Refetches when the topology reports maintenance starting or ending.
-function MaintenanceSection({ until }: { until: number }) {
-  const [state, setState] = useState<Maintenance | null>(null), [editing, setEditing] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false)
+// Lists every window, or only one device's when device is set. Refetches when the topology
+// reports maintenance starting or ending.
+function MaintenanceSection({ until, devices, device }: { until: number; devices: Device[]; device?: Device }) {
+  const [target, setTarget] = useState(''), [state, setState] = useState<Maintenance | null>(null), [editing, setEditing] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false)
   const [mode, setMode] = useState<'once' | 'weekly'>('once'), [name, setName] = useState(''), [start, setStart] = useState(''), [end, setEnd] = useState(''), [days, setDays] = useState<number[]>([]), [from, setFrom] = useState('22:00'), [to, setTo] = useState('02:00')
   useEffect(() => { api<Maintenance>('/maintenance').then(setState).catch(e => setError((e as Error).message)) }, [until])
-  function open() { const now = Math.floor(Date.now() / 60000) * 60; setStart(localInput(now)); setEnd(localInput(now + 3600)); setName(''); setDays([]); setError(''); setEditing(true) }
+  function open() { const now = Math.floor(Date.now() / 60000) * 60; setStart(localInput(now)); setEnd(localInput(now + 3600)); setName(''); setDays([]); setTarget(''); setError(''); setEditing(true) }
   async function add() {
+    const deviceId = device ? device.id : target ? Number(target) : null
     const body = mode === 'once'
-      ? { name, startsAt: start ? Math.floor(new Date(start).getTime() / 1000) : null, endsAt: end ? Math.floor(new Date(end).getTime() / 1000) : null }
-      : { name, days, startMin: minutes(from), endMin: minutes(to) }
+      ? { name, deviceId, startsAt: start ? Math.floor(new Date(start).getTime() / 1000) : null, endsAt: end ? Math.floor(new Date(end).getTime() / 1000) : null }
+      : { name, deviceId, days, startMin: minutes(from), endMin: minutes(to) }
     setBusy(true); setError('')
     try { setState(await api<Maintenance>('/maintenance', { method: 'POST', body: JSON.stringify(body) })); setEditing(false) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
   async function remove(id: number) { setError(''); try { setState(await api<Maintenance>(`/maintenance/${id}`, { method: 'DELETE' })) } catch (e) { setError((e as Error).message) } }
   const toggleDay = (d: number) => setDays(list => list.includes(d) ? list.filter(x => x !== d) : [...list, d])
-  return <fieldset className="channel maintenance"><div className="maintenance-head"><strong>Underhåll</strong>{state && state.until > 0 && <span className="maintenance-active"><BellOff size={12}/> Tyst till {new Date(state.until * 1000).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</span>}</div>
-    <small className="field-hint">Nya larm skickas inte under underhåll. Det som fortfarande är fel när fönstret slutar skickas då.</small>
-    {state && state.windows.length > 0 && <div className="maintenance-list">{state.windows.map(m => <div key={m.id}><span><strong>{m.name || (m.startsAt !== null ? 'En gång' : 'Schema')}</strong><small>{describeWindow(m)}</small></span><button type="button" className="icon-button" aria-label={`Ta bort ${m.name || describeWindow(m)}`} title="Ta bort" onClick={() => remove(m.id)}><Trash2 size={14}/></button></div>)}</div>}
+  const activeUntil = device ? until : state?.until || 0
+  const windows = (state?.windows || []).filter(m => !device || m.deviceId === device.id)
+  const deviceName = (id: number | null) => id === null ? 'Alla enheter' : devices.find(d => d.id === id)?.name || 'Okänd enhet'
+  return <fieldset className="channel maintenance"><div className="maintenance-head"><strong>Underhåll</strong>{activeUntil > 0 && <span className="maintenance-active"><BellOff size={12}/> Tyst till {new Date(activeUntil * 1000).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</span>}</div>
+    <small className="field-hint">{device ? `Larm för ${device.name} och länkportarna mot den skickas inte under underhåll.` : 'Nya larm skickas inte under underhåll.'} Det som fortfarande är fel när fönstret slutar skickas då.</small>
+    {windows.length > 0 && <div className="maintenance-list">{windows.map(m => <div key={m.id}><span><strong>{m.name || (m.startsAt !== null ? 'En gång' : 'Schema')}{!device && <em> · {deviceName(m.deviceId)}</em>}</strong><small>{describeWindow(m)}</small></span><button type="button" className="icon-button" aria-label={`Ta bort ${m.name || describeWindow(m)}`} title="Ta bort" onClick={() => remove(m.id)}><Trash2 size={14}/></button></div>)}</div>}
     {editing ? <div className="maintenance-editor" onKeyDown={e => { if (e.key === 'Enter' && e.target instanceof HTMLInputElement) { e.preventDefault(); add() } }}>
       <div className="segmented" role="radiogroup" aria-label="Typ av underhåll">{(['once', 'weekly'] as const).map(m => <button type="button" key={m} role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{m === 'once' ? 'En gång' : 'Schema'}</button>)}</div>
+      {!device && <label>Gäller<select value={target} onChange={e => setTarget(e.target.value)}><option value="">Alla enheter</option>{devices.filter(d => d.os !== 'external').map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
       <label>Namn (valfritt)<input value={name} onChange={e => setName(e.target.value)} maxLength={80} placeholder="Firmware-uppgradering"/></label>
       {mode === 'once' ? <>
         <label>Start<input type="datetime-local" value={start} onChange={e => setStart(e.target.value)}/></label>
@@ -242,7 +249,7 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
   const alarms = topology.alarms
   return <form className="inline-form alert-panel" onSubmit={submit}><FormTitle title="Larm" onCancel={onCancel}/>
     {alarms.length ? <div className="alarm-list">{alarms.map(a => <button type="button" key={a.id} className="alarm-item" onClick={() => a.deviceId && onSelect(a.deviceId)}><span className="status-dot offline"/><span><strong>{a.title}</strong><small>{a.kind === 'device' ? 'Svarar inte' : a.kind === 'errors' ? 'Många RX/TX-fel' : a.kind === 'pause' ? 'Många RX pause' : 'Porten är nere'} · {since(topology.serverTime - a.startedAt)}{a.quiet && ' · tyst under underhåll'}</small></span></button>)}</div> : <p className="muted">Inga aktiva larm. Enheter som slutar svara och länkportar som går ner eller får många RX/TX-fel eller RX pause larmar efter ungefär 30 sekunder.</p>}
-    <MaintenanceSection until={topology.maintenanceUntil}/>
+    <MaintenanceSection until={topology.maintenanceUntil} devices={topology.devices}/>
     {settings ? <>
       <label>Larma vid RX/TX-fel per minut<input value={settings.errorsPerMinute} onChange={e => set({ errorsPerMinute: Number(e.target.value) })} type="number" min={0} max={1000000} required/><small className="field-hint">Gäller länkportar och portar med larm på. 0 stänger av fellarmet.</small></label>
       <label>Larma vid RX pause per minut<input value={settings.pausePerMinute} onChange={e => set({ pausePerMinute: Number(e.target.value) })} type="number" min={0} max={100000000} required/><small className="field-hint">Pause-ramar som grannen skickar när den inte hinner ta emot. 0 stänger av pauselarmet.</small></label>
@@ -349,10 +356,12 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
       <PanelHead kind={deviceKind(device)} icon={<DeviceIcon device={device} size={20}/>} title={device.name} subtitle={<span className="mono">{addressLabel(device)}</span>} onClose={onClose}/>
       <div className={`status-line ${device.status}`}><span className={`status-dot ${device.status}`}/>{device.status === 'online' ? 'Svarar' : device.status === 'offline' ? 'Svarar inte' : 'Väntar på första mätningen'}<span className="status-line-time"><Clock3 size={13}/> {formatTime(device.lastSeen)}</span></div>
       {device.location && <div className="detail-location"><MapPin size={14}/> {device.location}</div>}
+      {device.maintenanceUntil > 0 && <div className="detail-location maintenance-active"><BellOff size={14}/> Underhåll till {new Date(device.maintenanceUntil * 1000).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })} – larm skickas inte</div>}
       {device.lastError && <div className="notice-error">{device.lastError}</div>}
       {editing && <EditDevice key={device.id} device={device} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onSaved() }}/>}
       <div className="section-heading"><h3>Portar</h3><span>{up} uppe av {ports.length}</span></div>
       {ports.length ? <div className="port-list">{ports.map(i => <div className={`port-row ${i.status} ${alarmed.has(i.id) ? 'is-alarm' : ''}`} key={i.id}><span className={`status-dot ${i.status}`}/><div><strong>{i.name}</strong><small>{i.description && i.description !== i.name ? i.description : i.status === 'up' && i.speedBps ? formatRate(i.speedBps) : i.status === 'down' ? 'Ingen länk' : 'Okänd status'}</small>{fresh(i) && errorRate(i) > 0 && <small className="port-errors" title="RX/TX-fel per minut senaste mätningen">RX/TX-fel {formatErrors(i.rxErrors)} / {formatErrors(i.txErrors)} per min</small>}{fresh(i) && (i.rxPause || 0) > 0 && <small className="port-errors" title="Mottagna pause-ramar per minut senaste mätningen">RX pause {formatErrors(i.rxPause)} per min</small>}</div>{fresh(i) && i.status === 'up' && <div className="port-rate"><span>↓ {formatRate(i.rxBps)}</span><span>↑ {formatRate(i.txBps)}</span></div>}{alertButton(i)}</div>)}</div> : <p className="muted">Portar visas efter första lyckade SNMP-avläsningen.</p>}
+      <div className="inline-form maintenance-box"><MaintenanceSection key={device.id} until={device.maintenanceUntil} devices={topology.devices} device={device}/></div>
       <div className="detail-foot">{!editing && <button className="secondary" onClick={() => setEditing(true)}><Pencil size={15}/> Redigera enhet</button>}<button className="text-danger" onClick={() => remove('devices', device.id)}><Trash2 size={15}/> Ta bort enhet</button></div>
     </>)
   }

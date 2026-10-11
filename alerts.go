@@ -203,8 +203,9 @@ type alertTarget struct {
 	address     string
 	detail      string
 	down        bool
-	skip        bool // state unknown, e.g. a port on a device that does not answer
-	clearAfter  int  // good polls in a row needed to close the alarm; 0 means the first one
+	peerID      int64 // the device at the other end of a link port, 0 when none
+	skip        bool  // state unknown, e.g. a port on a device that does not answer
+	clearAfter  int   // good polls in a row needed to close the alarm; 0 means the first one
 }
 
 // evaluate compares current device and port states with the open alarms after a poll cycle and
@@ -231,7 +232,10 @@ func (a *alerter) evaluate(ctx context.Context) {
 	}
 	rows.Close()
 	// Link ports are always watched; other ports only when someone turned the alert on.
-	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,i.status,i.rx_errors,i.tx_errors,i.rx_pause,i.last_sample FROM interfaces i JOIN devices d ON d.id=i.device_id
+	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,i.status,i.rx_errors,i.tx_errors,i.rx_pause,i.last_sample,
+		COALESCE((SELECT p.device_id FROM links l JOIN interfaces p ON p.id = CASE WHEN l.a_interface_id=i.id THEN l.b_interface_id ELSE l.a_interface_id END
+			WHERE l.a_interface_id=i.id OR l.b_interface_id=i.id LIMIT 1), 0)
+		FROM interfaces i JOIN devices d ON d.id=i.device_id
 		WHERE d.os!='external' AND (i.alert=1 OR EXISTS (SELECT 1 FROM links l WHERE l.a_interface_id=i.id OR l.b_interface_id=i.id))`)
 	if err != nil {
 		log.Printf("alerts: %v", err)
@@ -244,7 +248,7 @@ func (a *alerter) evaluate(ctx context.Context) {
 		var device, port, deviceStatus, status string
 		var rxErr, txErr, rxPause sql.NullFloat64
 		var sampled sql.NullInt64
-		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &status, &rxErr, &txErr, &rxPause, &sampled) == nil {
+		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &status, &rxErr, &txErr, &rxPause, &sampled, &t.peerID) == nil {
 			t.key, t.kind, t.interfaceID, t.title = fmt.Sprintf("p:%d", id), "port", &id, device+" / "+port
 			t.down, t.skip = status == "down", deviceStatus != "online"
 			targets = append(targets, t)
@@ -274,12 +278,21 @@ func (a *alerter) evaluate(ctx context.Context) {
 	}
 	rows.Close()
 	// During maintenance new alarms are recorded but not sent. One still open when maintenance
-	// ends is sent then; one that clears before that closes quietly.
-	until, err := a.store.maintenanceUntil(ctx, time.Unix(now, 0))
+	// ends is sent then; one that clears before that closes quietly. A link port is also quiet
+	// while the device at its other end is in maintenance, since a reboot takes the link down.
+	windows, err := a.store.maintenanceWindows(ctx)
 	if err != nil {
 		log.Printf("alerts: %v", err)
 	}
-	muted := !until.IsZero()
+	inMaintenance := map[int64]bool{}
+	mutedDevice := func(id int64) bool {
+		quiet, ok := inMaintenance[id]
+		if !ok {
+			quiet = !maintenanceUntil(windows, time.Unix(now, 0), id).IsZero()
+			inMaintenance[id] = quiet
+		}
+		return quiet
+	}
 	type openAlarm struct {
 		id, started int64
 		quiet       bool
@@ -315,6 +328,7 @@ func (a *alerter) evaluate(ctx context.Context) {
 	for _, t := range targets {
 		watched[t.key] = true
 		alarm, isOpen := open[t.key]
+		muted := mutedDevice(t.deviceID) || (t.peerID != 0 && mutedDevice(t.peerID))
 		switch {
 		case t.skip:
 			delete(a.misses, t.key)

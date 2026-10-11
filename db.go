@@ -123,6 +123,8 @@ func openStore() (*store, error) {
 		"ALTER TABLE devices ADD COLUMN web_user TEXT NOT NULL DEFAULT ''",
 		// An alarm that opened during maintenance and has not been sent.
 		"ALTER TABLE alarms ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0",
+		// The device a maintenance window covers; NULL means every device.
+		"ALTER TABLE maintenance ADD COLUMN device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE",
 	} {
 		if _, err := db.Exec(statement); err != nil && !strings.Contains(err.Error(), "duplicate column") {
 			db.Close()

@@ -294,6 +294,12 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .maintenance-list span { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 }
 .maintenance-list strong { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
 .maintenance-list small { font-size: 11px; color: var(--text-3) }
+.maintenance-list em { font-style: normal; font-weight: 500; color: var(--text-3) }
+.maintenance-box .channel { border-top: 0; padding-top: 0 }
+.details .maintenance-box { margin-top: 20px }
+.detail-location.maintenance-active { display: flex; font-size: 12.5px }
+.detail-location.maintenance-active svg { color: var(--warn) }
+.node-maintenance { margin-left: auto; flex: none; display: grid; place-items: center; color: var(--warn) }
 .maintenance-editor { display: grid; gap: 10px }
 .segmented, .weekdays { display: grid; gap: 4px }
 .segmented { grid-template-columns: 1fr 1fr }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -124,8 +125,41 @@ func TestMaintenanceBackToBack(t *testing.T) {
 	now := time.Now()
 	a1, a2, b2 := now.Unix()-60, now.Unix()+600, now.Unix()+1200
 	_, _ = s.db.Exec("INSERT INTO maintenance(starts_at,ends_at) VALUES(?,?),(?,?)", a1, a2, a2, b2)
-	until, err := s.maintenanceUntil(t.Context(), now)
-	if err != nil || until.Unix() != b2 {
+	windows, err := s.maintenanceWindows(t.Context())
+	if until := maintenanceUntil(windows, now, 0); err != nil || until.Unix() != b2 {
 		t.Fatalf("want until %d, got %v %v", b2, until.Unix(), err)
+	}
+}
+
+func TestMaintenanceForOneDevice(t *testing.T) {
+	s := testStore(t)
+	secret, _ := s.encrypt(`{"community":"c"}`)
+	// core (1) links to sw1 (2); sw2 (3) is unrelated. sw1 goes into maintenance and reboots.
+	for i, name := range []string{"core", "sw1", "sw2"} {
+		if _, err := s.db.Exec("INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES(?,?,'swos','2c',?,'online')", name, fmt.Sprintf("192.0.2.%d", i+1), secret); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, _ = s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(1,1,'ether1','up'),(2,1,'ether1','up')")
+	_, _ = s.db.Exec("INSERT INTO links(a_interface_id,b_interface_id,source) VALUES(1,2,'manual')")
+	now := time.Now().Unix()
+	_, _ = s.db.Exec("INSERT INTO maintenance(device_id,starts_at,ends_at) VALUES(2,?,?)", now-60, now+3600)
+	_, _ = s.db.Exec("UPDATE devices SET status='offline' WHERE name IN ('sw1','sw2')")
+	_, _ = s.db.Exec("UPDATE interfaces SET status='down' WHERE device_id=1")
+	a, sent := testAlerter(s)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	got := sent()
+	if len(got) != 1 || len(got[0]) != 1 || got[0][0].Title != "sw2" {
+		t.Fatalf("want only sw2 sent, got %v", got)
+	}
+	var quiet int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM alarms WHERE quiet=1").Scan(&quiet)
+	if quiet != 2 { // sw1 itself and core's port towards it
+		t.Fatalf("want 2 quiet alarms, got %d", quiet)
+	}
+	windows, _ := s.maintenanceWindows(t.Context())
+	if !maintenanceUntil(windows, time.Now(), 0).IsZero() || maintenanceUntil(windows, time.Now(), 2).Unix() != now+3600 {
+		t.Fatal("device window counted for the wrong device")
 	}
 }

@@ -1,4 +1,4 @@
-export type Device = { id: number; name: string; address: string; resolved: string; location: string; os: 'routeros' | 'swos' | 'external'; kind: '' | 'cloud' | 'server'; snmpVersion: string; webUser: string; status: string; lastSeen: number | null; lastError: string; x: number | null; y: number | null }
+export type Device = { id: number; name: string; address: string; resolved: string; location: string; os: 'routeros' | 'swos' | 'external'; kind: '' | 'cloud' | 'server'; snmpVersion: string; webUser: string; status: string; lastSeen: number | null; lastError: string; x: number | null; y: number | null; maintenanceUntil: number }
 export type Interface = { id: number; deviceId: number; ifIndex: number; name: string; description: string; speedBps: number; status: string; rxBps: number | null; txBps: number | null; lastSample: number | null; rxErrors: number | null; txErrors: number | null; rxPause: number | null; alert: boolean }
 export type Link = { id: number; aInterfaceId: number; bInterfaceId: number; source: string }
 export type Candidate = { id: number; localInterfaceId: number; remoteDeviceId: number | null; remotePort: string; remoteName: string }
@@ -6,7 +6,7 @@ export type DismissedCandidate = { id: number; localInterfaceId: number; remoteP
 export type Topology = { devices: Device[]; interfaces: Interface[]; links: Link[]; candidates: Candidate[]; dismissedCandidates: DismissedCandidate[]; alarms: Alarm[]; maintenanceUntil: number; serverTime: number }
 export type Alarm = { id: number; kind: 'device' | 'port' | 'errors' | 'pause'; deviceId: number | null; interfaceId: number | null; title: string; startedAt: number; clearedAt: number | null; quiet: boolean }
 export type AlertSettings = { discordEnabled: boolean; emailEnabled: boolean; smtpHost: string; smtpPort: number; smtpSecurity: 'starttls' | 'tls' | 'none'; smtpUser: string; from: string; to: string[]; errorsPerMinute: number; pausePerMinute: number; hasDiscordWebhook: boolean; hasSmtpPassword: boolean; lastError: string; lastErrorAt: number }
-export type MaintenanceWindow = { id: number; name: string; startsAt: number | null; endsAt: number | null; days: number[]; startMin: number; endMin: number }
+export type MaintenanceWindow = { id: number; name: string; deviceId: number | null; startsAt: number | null; endsAt: number | null; days: number[]; startMin: number; endMin: number }
 export type Maintenance = { windows: MaintenanceWindow[]; until: number }
 export type Point = { ts: number; rxBps: number; txBps: number }
 

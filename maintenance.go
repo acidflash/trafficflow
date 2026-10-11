@@ -8,12 +8,13 @@ import (
 	"time"
 )
 
-// A maintenance window silences new alarms. A one-time window runs from StartsAt to EndsAt; a
+// A maintenance window silences new alarms, for one device or all of them. A one-time window runs from StartsAt to EndsAt; a
 // scheduled one repeats on the weekdays in Days from StartMin to EndMin minutes past midnight
 // local time, and ends the next day when EndMin is not after StartMin.
 type maintenanceWindow struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
+	DeviceID *int64 `json:"deviceId"` // nil covers every device
 	StartsAt *int64 `json:"startsAt"`
 	EndsAt   *int64 `json:"endsAt"`
 	Days     []int  `json:"days"` // 0 = Sunday, as time.Weekday
@@ -98,7 +99,7 @@ func containsDay(days []int, d int) bool {
 
 func (s *store) maintenanceWindows(ctx context.Context) ([]maintenanceWindow, error) {
 	list := []maintenanceWindow{}
-	rows, err := s.db.QueryContext(ctx, "SELECT id,name,starts_at,ends_at,days,start_min,end_min FROM maintenance ORDER BY id")
+	rows, err := s.db.QueryContext(ctx, "SELECT id,name,device_id,starts_at,ends_at,days,start_min,end_min FROM maintenance ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +107,7 @@ func (s *store) maintenanceWindows(ctx context.Context) ([]maintenanceWindow, er
 	for rows.Next() {
 		var m maintenanceWindow
 		var days int
-		if err := rows.Scan(&m.ID, &m.Name, &m.StartsAt, &m.EndsAt, &days, &m.StartMin, &m.EndMin); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.DeviceID, &m.StartsAt, &m.EndsAt, &days, &m.StartMin, &m.EndMin); err != nil {
 			return nil, err
 		}
 		m.Days = []int{}
@@ -120,18 +121,18 @@ func (s *store) maintenanceWindows(ctx context.Context) ([]maintenanceWindow, er
 	return list, rows.Err()
 }
 
-// maintenanceUntil reports when the current maintenance ends, or zero when none is running.
-// Overlapping or back-to-back windows count as one, so the end is where alarms resume.
-func (s *store) maintenanceUntil(ctx context.Context, now time.Time) (time.Time, error) {
-	windows, err := s.maintenanceWindows(ctx)
-	if err != nil {
-		return time.Time{}, err
-	}
+// maintenanceUntil reports when maintenance covering deviceID ends, or zero when none is running.
+// Device 0 means only windows for every device count. Overlapping or back-to-back windows count
+// as one, so the end is where alarms resume.
+func maintenanceUntil(windows []maintenanceWindow, now time.Time, deviceID int64) time.Time {
 	var until time.Time
 	at := now
 	for range 32 {
 		extended := false
 		for _, m := range windows {
+			if m.DeviceID != nil && *m.DeviceID != deviceID {
+				continue
+			}
 			if end, ok := m.activeUntil(at); ok && end.After(until) {
 				until, extended = end, true
 			}
@@ -141,7 +142,7 @@ func (s *store) maintenanceUntil(ctx context.Context, now time.Time) (time.Time,
 		}
 		at = until
 	}
-	return until, nil
+	return until
 }
 
 type maintenanceView struct {
@@ -156,7 +157,7 @@ func (a *server) maintenance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := maintenanceView{Windows: windows}
-	if until, err := a.store.maintenanceUntil(r.Context(), time.Now()); err == nil && !until.IsZero() {
+	if until := maintenanceUntil(windows, time.Now(), 0); !until.IsZero() {
 		view.Until = until.Unix()
 	}
 	writeJSON(w, 200, view)
@@ -172,12 +173,19 @@ func (a *server) addMaintenance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
+	if input.DeviceID != nil {
+		var exists bool
+		if err := a.store.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM devices WHERE id=? AND os!='external')", *input.DeviceID).Scan(&exists); err != nil || !exists {
+			writeError(w, 400, "Enheten finns inte")
+			return
+		}
+	}
 	days := 0
 	for _, d := range input.Days {
 		days |= 1 << d
 	}
-	if _, err := a.store.db.ExecContext(r.Context(), "INSERT INTO maintenance(name,starts_at,ends_at,days,start_min,end_min) VALUES(?,?,?,?,?,?)",
-		input.Name, input.StartsAt, input.EndsAt, days, input.StartMin, input.EndMin); err != nil {
+	if _, err := a.store.db.ExecContext(r.Context(), "INSERT INTO maintenance(name,device_id,starts_at,ends_at,days,start_min,end_min) VALUES(?,?,?,?,?,?,?)",
+		input.Name, input.DeviceID, input.StartsAt, input.EndsAt, days, input.StartMin, input.EndMin); err != nil {
 		writeError(w, 500, "Kunde inte spara underhållsfönstret")
 		return
 	}
