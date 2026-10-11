@@ -175,7 +175,7 @@ func (a *server) addMaintenance(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.DeviceID != nil {
 		var exists bool
-		if err := a.store.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM devices WHERE id=? AND os!='external')", *input.DeviceID).Scan(&exists); err != nil || !exists {
+		if err := a.store.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM devices WHERE id=?)", *input.DeviceID).Scan(&exists); err != nil || !exists {
 			writeError(w, 400, "Enheten finns inte")
 			return
 		}

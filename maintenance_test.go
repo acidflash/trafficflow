@@ -163,3 +163,25 @@ func TestMaintenanceForOneDevice(t *testing.T) {
 		t.Fatal("device window counted for the wrong device")
 	}
 }
+
+func TestMaintenanceForServer(t *testing.T) {
+	s := testStore(t)
+	secret, _ := s.encrypt(`{"community":"c"}`)
+	_, _ = s.db.Exec("INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES('core','192.0.2.1','swos','2c',?,'online')", secret)
+	_, _ = s.db.Exec("INSERT INTO devices(name,address,os,kind,snmp_version,credential,status) VALUES('nas','external:1','external','server','',?,'unknown')", secret)
+	_, _ = s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(1,1,'ether1','down'),(2,1,'Anslutning','unknown')")
+	_, _ = s.db.Exec("INSERT INTO links(a_interface_id,b_interface_id,source) VALUES(1,2,'manual')")
+	now := time.Now().Unix()
+	_, _ = s.db.Exec("INSERT INTO maintenance(device_id,starts_at,ends_at) VALUES(2,?,?)", now-60, now+3600)
+	a, sent := testAlerter(s)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("port towards a server in maintenance alarmed: %v", got)
+	}
+	var quiet int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM alarms WHERE kind='port' AND quiet=1").Scan(&quiet)
+	if quiet != 1 {
+		t.Fatalf("want the core port quiet, got %d", quiet)
+	}
+}

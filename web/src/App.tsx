@@ -206,11 +206,11 @@ function MaintenanceSection({ until, devices, device }: { until: number; devices
   const windows = (state?.windows || []).filter(m => !device || m.deviceId === device.id)
   const deviceName = (id: number | null) => id === null ? 'Alla enheter' : devices.find(d => d.id === id)?.name || 'Okänd enhet'
   return <fieldset className="channel maintenance"><div className="maintenance-head"><strong>Underhåll</strong>{activeUntil > 0 && <span className="maintenance-active"><BellOff size={12}/> Tyst till {new Date(activeUntil * 1000).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}</span>}</div>
-    <small className="field-hint">{device ? `Larm för ${device.name} och länkportarna mot den skickas inte under underhåll.` : 'Nya larm skickas inte under underhåll.'} Det som fortfarande är fel när fönstret slutar skickas då.</small>
+    <small className="field-hint">{device?.os === 'external' ? `Larm för porten mot ${device.name} skickas inte under underhåll.` : device ? `Larm för ${device.name} och länkportarna mot den skickas inte under underhåll.` : 'Nya larm skickas inte under underhåll.'} Det som fortfarande är fel när fönstret slutar skickas då.</small>
     {windows.length > 0 && <div className="maintenance-list">{windows.map(m => <div key={m.id}><span><strong>{m.name || (m.startsAt !== null ? 'En gång' : 'Schema')}{!device && <em> · {deviceName(m.deviceId)}</em>}</strong><small>{describeWindow(m)}</small></span><button type="button" className="icon-button" aria-label={`Ta bort ${m.name || describeWindow(m)}`} title="Ta bort" onClick={() => remove(m.id)}><Trash2 size={14}/></button></div>)}</div>}
     {editing ? <div className="maintenance-editor" onKeyDown={e => { if (e.key === 'Enter' && e.target instanceof HTMLInputElement) { e.preventDefault(); add() } }}>
       <div className="segmented" role="radiogroup" aria-label="Typ av underhåll">{(['once', 'weekly'] as const).map(m => <button type="button" key={m} role="radio" aria-checked={mode === m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>{m === 'once' ? 'En gång' : 'Schema'}</button>)}</div>
-      {!device && <label>Gäller<select value={target} onChange={e => setTarget(e.target.value)}><option value="">Alla enheter</option>{devices.filter(d => d.os !== 'external').map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
+      {!device && <label>Gäller<select value={target} onChange={e => setTarget(e.target.value)}><option value="">Alla enheter</option>{devices.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}</select></label>}
       <label>Namn (valfritt)<input value={name} onChange={e => setName(e.target.value)} maxLength={80} placeholder="Firmware-uppgradering"/></label>
       {mode === 'once' ? <>
         <label>Start<input type="datetime-local" value={start} onChange={e => setStart(e.target.value)}/></label>
@@ -343,6 +343,7 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
       {peers.length ? <div className="port-list">{peers.map(({ link, peer, owner }) => <div className="port-row" key={link.id}><span className={`status-dot ${peer.status}`}/><div><strong>{owner?.name || 'Okänd'} / {peer.name}</strong><small>{formatRate(peer.speedBps)}</small></div>{server
         ? <div className="port-rate"><span>↓ {fresh(peer) ? formatRate(peer.txBps) : '–'}</span><span>↑ {fresh(peer) ? formatRate(peer.rxBps) : '–'}</span></div>
         : <div className="port-rate">{fresh(peer) ? formatRate(peer.rxBps) : '–'}<small>in</small></div>}</div>)}</div> : <p className="muted">Inte kopplat ännu. Använd Ny länk och välj {device.name} / Anslutning mot {server ? 'switchporten' : 'routerns port'}.</p>}
+      <div className="inline-form maintenance-box"><MaintenanceSection key={device.id} until={device.maintenanceUntil} devices={topology.devices} device={device}/></div>
       <div className="detail-foot">{!editing && <button className="secondary" onClick={() => setEditing(true)}><Pencil size={15}/> Redigera {noun}</button>}<button className="text-danger" onClick={() => remove('devices', device.id)}><Trash2 size={15}/> Ta bort {noun}</button></div>
     </>)
   }

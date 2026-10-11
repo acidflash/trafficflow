@@ -371,9 +371,6 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 			allUntil = until.Unix()
 		}
 		for i := range devices {
-			if devices[i].OS == "external" {
-				continue
-			}
 			if until := maintenanceUntil(windows, now, devices[i].ID); !until.IsZero() {
 				devices[i].MaintenanceUntil = until.Unix()
 			}
