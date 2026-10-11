@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { ReactFlow, Background, BaseEdge, Controls, EdgeLabelRenderer, getSmoothStepPath, Handle, Position, useNodesState, useStore, type Edge, type EdgeProps, type Node, type NodeProps, type ReactFlowInstance } from '@xyflow/react'
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, BellOff, BellRing, Cable, ChevronRight, Clock3, Cloud, List, LogOut, Map as MapIcon, MapPin, MousePointerClick, Network, Pencil, Plus, RefreshCw, Search, Send, Server, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bell, BellOff, BellRing, Cable, ChevronRight, Clock3, Cloud, List, LogOut, Map as MapIcon, MapPin, MousePointerClick, Network, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil, Plus, RefreshCw, Search, Send, Server, Trash2, X } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import '@xyflow/react/dist/style.css'
 import { arrangeMap } from './layout'
@@ -395,6 +395,16 @@ export default function App() {
   function arrange() { if (!topology) return; const positions = arrangeMap(topology.devices, topology.interfaces, topology.links); setNodes(existing => existing.map(n => ({ ...n, position: positions.get(Number(n.id)) || n.position }))); requestAnimationFrame(() => flow.current?.fitView({ padding: 0.15, duration: 300 })); savePositions([...positions].map(([id, p]) => ({ id, ...p }))) }
   const phone = useMedia(phoneQuery)
   const [view, setView] = useState<'map' | 'devices' | 'alerts'>('map'), [sheetExpanded, setSheetExpanded] = useState(false)
+  // Hidden side panels on desktop, remembered per browser. A panel still opens when it has
+  // something to show: a form or the alert panel on the left, a selection on the right.
+  const [hidden, setHidden] = useState<{ left: boolean; right: boolean }>(() => { try { return { left: false, right: false, ...JSON.parse(localStorage.getItem('tf-panels') || '{}') } } catch { return { left: false, right: false } } })
+  function toggleSide(side: 'left' | 'right') {
+    const next = { ...hidden, [side]: !hidden[side] }
+    setHidden(next)
+    if (side === 'left' && next.left) setPanel(null)
+    if (side === 'right' && next.right) setSelection(null)
+    try { localStorage.setItem('tf-panels', JSON.stringify(next)) } catch { /* not remembered */ }
+  }
   useEffect(() => { if (!selection) setSheetExpanded(false) }, [selection])
   // Pans the map so the given devices sit in the part of the map the bottom sheet leaves visible.
   function focus(ids: number[]) {
@@ -465,10 +475,11 @@ export default function App() {
   const alertPanel = topology && <AlertPanel topology={topology} onSelect={id => show({ kind: 'device', id })} onCancel={() => phone ? setView('map') : setPanel(null)}/>
   const updated = topology ? new Date(topology.serverTime * 1000).toLocaleTimeString('sv-SE') : ''
   return <div className={`app-shell ${phone ? 'is-phone' : ''}`}><header className="topbar"><div className="brand"><span className="brand-icon"><TopologyMark size={18}/></span><strong>Trafficflow</strong></div><div className="topbar-actions">
+      {!phone && <><button className="icon-button" title={hidden.left ? 'Visa enhetslistan' : 'Dölj enhetslistan'} aria-label={hidden.left ? 'Visa enhetslistan' : 'Dölj enhetslistan'} aria-pressed={!hidden.left} onClick={() => toggleSide('left')}>{hidden.left ? <PanelLeftOpen size={16}/> : <PanelLeftClose size={16}/>}</button><button className="icon-button" title={hidden.right ? 'Visa detaljpanelen' : 'Dölj detaljpanelen'} aria-label={hidden.right ? 'Visa detaljpanelen' : 'Dölj detaljpanelen'} aria-pressed={!hidden.right} onClick={() => toggleSide('right')}>{hidden.right ? <PanelRightOpen size={16}/> : <PanelRightClose size={16}/>}</button></>}
       <span className={`live-indicator ${stale ? 'is-stale' : ''}`} title="Kartan hämtas var 15:e sekund">{stale ? <><AlertTriangle size={13}/> Ingen kontakt <span className="live-long">sedan </span>{new Date(lastContact).toLocaleTimeString('sv-SE')}</> : <><span className="pulse"/> {topology ? <><span className="live-long">Uppdaterad </span>{updated}</> : 'Ansluter…'}</>}</span>
       {!phone && <button className={`icon-button alarm-button ${alarmCount ? 'has-alarms' : ''}`} title={alarmCount ? `${alarmCount} aktiva larm` : topology?.maintenanceUntil ? 'Underhåll pågår – larm skickas inte' : 'Larm och aviseringar'} aria-label={alarmCount ? `${alarmCount} aktiva larm` : 'Larm och aviseringar'} aria-expanded={panel === 'alerts'} onClick={() => setPanel(panel === 'alerts' ? null : 'alerts')}>{alarmCount ? <BellRing size={16}/> : topology?.maintenanceUntil ? <BellOff size={16}/> : <Bell size={16}/>}{alarmCount > 0 && <span className="alarm-count">{alarmCount}</span>}</button>}<button className="icon-button" title="Uppdatera nu" aria-label="Uppdatera nu" onClick={refresh}><RefreshCw size={16}/></button><button className="icon-button" title="Logga ut" aria-label="Logga ut" onClick={logout}><LogOut size={16}/></button></div></header>
     {phone && health}
-    <div className="workspace" data-view={phone ? view : undefined}><aside className="sidebar">
+    <div className={`workspace ${!phone && hidden.left && panel === null ? 'hide-left' : ''} ${!phone && hidden.right && !selection ? 'hide-right' : ''}`} data-view={phone ? view : undefined}><aside className="sidebar">
       {!phone && health}
       <div className="sidebar-actions"><button className="primary" onClick={() => setPanel(panel === 'device' ? null : 'device')}><Plus size={16}/> Enhet</button><button className="secondary" onClick={() => setPanel(panel === 'link' ? null : 'link')}><Cable size={16}/> Länk</button><button className="secondary" onClick={() => setPanel(panel === 'cloud' ? null : 'cloud')}><Cloud size={16}/> Moln</button><button className="secondary" onClick={() => setPanel(panel === 'server' ? null : 'server')}><Server size={16}/> Server</button></div>
       {panel === 'device' && <AddDevice onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{(panel === 'cloud' || panel === 'server') && <ExternalForm key={panel} kind={panel} onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}{panel === 'alerts' && !phone && alertPanel}{panel === 'link' && topology && <AddLink topology={topology} onCancel={() => setPanel(null)} onDone={() => { setPanel(null); refresh() }}/>}

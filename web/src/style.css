@@ -75,7 +75,13 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .live-indicator .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); animation: breathe 1.4s var(--ease) infinite alternate }
 .live-indicator.is-stale { color: var(--warn); font-weight: 600 }
 
-.workspace { flex: 1; display: grid; grid-template-columns: 268px minmax(0, 1fr) 344px; min-height: 0 }
+.workspace { --left: 268px; --right: 344px; flex: 1; display: grid; grid-template-columns: var(--left) minmax(0, 1fr) var(--right); min-height: 0 }
+.workspace > .map-area { grid-column: 2 }
+.workspace > .details { grid-column: 3 }
+.workspace.hide-left { --left: 0px }
+.workspace.hide-left > .sidebar { display: none }
+.workspace.hide-right { --right: 0px }
+.workspace.hide-right > .details { display: none }
 
 /* Sidebar */
 .sidebar { background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow: auto; min-height: 0 }
@@ -321,11 +327,11 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .login-panel .primary { height: 38px; margin-top: 4px; font-size: 13px }
 
 @media (max-width: 1200px) {
-  .workspace { grid-template-columns: 240px minmax(0, 1fr) 312px }
+  .workspace { --left: 240px; --right: 312px }
   .map-key { display: none }
 }
 @media (max-width: 900px) {
-  .workspace { grid-template-columns: 240px minmax(0, 1fr) }
+  .workspace { --left: 240px; grid-template-columns: var(--left) minmax(0, 1fr) }
   .details { position: absolute; z-index: 10; right: 0; top: 48px; bottom: 0; width: min(344px, calc(100vw - 240px)); box-shadow: -12px 0 32px oklch(8% .01 var(--hue) / .5) }
   .details.empty-details { display: none }
 }
