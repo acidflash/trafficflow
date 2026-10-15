@@ -53,6 +53,7 @@ func main() {
 	mux.HandleFunc("POST /api/devices", app.authed(app.addDevice))
 	mux.HandleFunc("PATCH /api/devices/{id}", app.authed(app.updateDevice))
 	mux.HandleFunc("DELETE /api/devices/{id}", app.authed(app.deleteDevice))
+	mux.HandleFunc("PUT /api/devices/{id}/alerts", app.authed(app.deviceAlerts))
 	mux.HandleFunc("PUT /api/layout", app.authed(app.saveLayout))
 	mux.HandleFunc("POST /api/externals", app.authed(app.addExternal))
 	mux.HandleFunc("PATCH /api/externals/{id}", app.authed(app.updateExternal))
@@ -247,6 +248,8 @@ type deviceView struct {
 	Y           *float64 `json:"y"`
 	// MaintenanceUntil is when maintenance covering this device ends; 0 when none is running.
 	MaintenanceUntil int64 `json:"maintenanceUntil"`
+	// IgnorePause turns off RX pause alarms for the device; port down still alarms.
+	IgnorePause bool `json:"ignorePause"`
 }
 type interfaceView struct {
 	ID          int64    `json:"id"`
@@ -291,7 +294,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	interfaces := []interfaceView{}
 	links := []linkView{}
 	candidates := []candidateView{}
-	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,location,os,kind,snmp_version,web_user,status,last_seen,last_error,map_x,map_y FROM devices ORDER BY name")
+	rows, err := a.store.db.QueryContext(ctx, "SELECT id,name,address,resolved,location,os,kind,snmp_version,web_user,status,last_seen,last_error,map_x,map_y,ignore_pause FROM devices ORDER BY name")
 	if err != nil {
 		writeError(w, 500, "Kunde inte läsa enheter")
 		return
@@ -299,7 +302,7 @@ func (a *server) topology(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var x deviceView
 		var last *int64
-		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.Location, &x.OS, &x.Kind, &x.SNMPVersion, &x.WebUser, &x.Status, &last, &x.LastError, &x.X, &x.Y) == nil {
+		if rows.Scan(&x.ID, &x.Name, &x.Address, &x.Resolved, &x.Location, &x.OS, &x.Kind, &x.SNMPVersion, &x.WebUser, &x.Status, &last, &x.LastError, &x.X, &x.Y, &x.IgnorePause) == nil {
 			x.LastSeen = last
 			devices = append(devices, x)
 		}
@@ -546,6 +549,32 @@ func (a *server) updateDevice(w http.ResponseWriter, r *http.Request) {
 	_, err = a.store.db.ExecContext(r.Context(), "UPDATE devices SET address=?,resolved=?,web_user=?,credential=? WHERE id=?", address, resolved, input.WebUser, encrypted, id)
 	if err != nil {
 		writeError(w, 409, "Adressen används redan av en annan enhet")
+		return
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// deviceAlerts turns RX pause alarms on or off for a device. Its ports still alarm when they go down.
+func (a *server) deviceAlerts(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r)
+	if err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	var input struct {
+		IgnorePause bool `json:"ignorePause"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, 400, err.Error())
+		return
+	}
+	result, err := a.store.db.ExecContext(r.Context(), "UPDATE devices SET ignore_pause=? WHERE id=? AND os!='external'", input.IgnorePause, id)
+	if err != nil {
+		writeError(w, 500, "Kunde inte spara enheten")
+		return
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		writeError(w, 404, "Enheten finns inte")
 		return
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})

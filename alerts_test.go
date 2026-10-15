@@ -395,3 +395,61 @@ func TestErrorRate(t *testing.T) {
 		t.Fatal("rebooted device accepted")
 	}
 }
+
+func TestAlertIgnorePause(t *testing.T) {
+	s := testStore(t)
+	srv := &server{store: s}
+	secret, _ := s.encrypt(`{"community":"c"}`)
+	for _, address := range []string{"192.0.2.1", "192.0.2.2"} {
+		if _, err := s.db.Exec("INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES(?,?,'swos','2c',?,'online')", "sw-"+address[len(address)-1:], address, secret); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, device := range []int{1, 2} {
+		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,rx_pause,last_sample) VALUES(?,?,?,'up',0,?)", device, index+1, fmt.Sprintf("ether%d", index+1), time.Now().Unix()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := srv.insertLink(t.Context(), 1, 2, "manual"); err != nil {
+		t.Fatal(err)
+	}
+	a, sent := testAlerter(s)
+	if _, err := s.db.Exec("UPDATE interfaces SET rx_pause=9000 WHERE id=1"); err != nil {
+		t.Fatal(err)
+	}
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 1 || got[0][0].Kind != "pause" {
+		t.Fatalf("want a pause alarm, got %v", got)
+	}
+
+	// Ignoring pause on the device closes the open pause alarm quietly and opens no new one.
+	req := httptest.NewRequest("PUT", "/api/devices/1/alerts", strings.NewReader(`{"ignorePause":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+	srv.deviceAlerts(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	for range 3 {
+		a.evaluate(t.Context())
+	}
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("pause alarm despite ignore: %v", got)
+	}
+	var open int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM alarms WHERE cleared_at IS NULL").Scan(&open); err != nil || open != 0 {
+		t.Fatalf("open alarms %d, %v", open, err)
+	}
+
+	// The port still alarms when it goes down.
+	if _, err := s.db.Exec("UPDATE interfaces SET status='down' WHERE id=1"); err != nil {
+		t.Fatal(err)
+	}
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 1 || len(got[0]) != 1 || !got[0][0].Down || got[0][0].Kind != "port" {
+		t.Fatalf("want a port alarm, got %v", got)
+	}
+}

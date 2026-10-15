@@ -309,6 +309,9 @@ button:disabled { cursor: not-allowed; opacity: .45 }
 .details .maintenance-box { margin-top: 20px }
 .detail-location.maintenance-active { display: flex; font-size: 12.5px }
 .detail-location.maintenance-active svg { color: var(--warn) }
+.ignore-pause { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 8px; margin-top: 14px; font-size: 12.5px; color: var(--text); cursor: pointer }
+.ignore-pause input { width: 15px; height: 15px; margin: 0; accent-color: var(--text) }
+.ignore-pause .field-hint { grid-column: 2 }
 .node-maintenance { margin-left: auto; flex: none; display: grid; place-items: center; color: var(--warn) }
 .maintenance-editor { display: grid; gap: 10px }
 .segmented, .weekdays { display: grid; gap: 4px }
@@ -407,6 +410,8 @@ button:disabled { cursor: not-allowed; opacity: .45 }
   .login-panel .primary { height: 44px }
   .inline-form .check { min-height: 32px }
   .inline-form .check input { width: 20px; height: 20px }
+  .ignore-pause { min-height: 32px }
+  .ignore-pause input { width: 20px; height: 20px }
   .device-list-item { padding: 9px 8px; gap: 12px }
   .list-device-icon { width: 34px; height: 34px }
   .device-list-text strong { font-size: 14px }
