@@ -231,8 +231,19 @@ func (a *alerter) evaluate(ctx context.Context) {
 		}
 	}
 	rows.Close()
+	// Devices that ignore pause; a server's flag covers the switch port it is linked to.
+	ignoresPause := map[int64]bool{}
+	if ids, err := a.store.db.QueryContext(ctx, "SELECT id FROM devices WHERE ignore_pause=1"); err == nil {
+		for ids.Next() {
+			var id int64
+			if ids.Scan(&id) == nil {
+				ignoresPause[id] = true
+			}
+		}
+		ids.Close()
+	}
 	// Link ports are always watched; other ports only when someone turned the alert on.
-	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,d.ignore_pause,i.status,i.rx_errors,i.tx_errors,i.rx_pause,i.last_sample,
+	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address,d.status,i.status,i.rx_errors,i.tx_errors,i.rx_pause,i.last_sample,
 		COALESCE((SELECT p.device_id FROM links l JOIN interfaces p ON p.id = CASE WHEN l.a_interface_id=i.id THEN l.b_interface_id ELSE l.a_interface_id END
 			WHERE l.a_interface_id=i.id OR l.b_interface_id=i.id LIMIT 1), 0)
 		FROM interfaces i JOIN devices d ON d.id=i.device_id
@@ -248,8 +259,7 @@ func (a *alerter) evaluate(ctx context.Context) {
 		var device, port, deviceStatus, status string
 		var rxErr, txErr, rxPause sql.NullFloat64
 		var sampled sql.NullInt64
-		var ignorePause bool
-		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &ignorePause, &status, &rxErr, &txErr, &rxPause, &sampled, &t.peerID) == nil {
+		if rows.Scan(&id, &t.deviceID, &device, &port, &t.address, &deviceStatus, &status, &rxErr, &txErr, &rxPause, &sampled, &t.peerID) == nil {
 			t.key, t.kind, t.interfaceID, t.title = fmt.Sprintf("p:%d", id), "port", &id, device+" / "+port
 			t.down, t.skip = status == "down", deviceStatus != "online"
 			targets = append(targets, t)
@@ -265,8 +275,9 @@ func (a *alerter) evaluate(ctx context.Context) {
 				targets = append(targets, e)
 			}
 			// Many received pause frames mean the neighbour keeps asking this port to stop sending.
-			// A device set to ignore pause is left out, so an open pause alarm closes quietly.
-			if cfg.PausePerMinute > 0 && !ignorePause {
+			// A device set to ignore pause, or linked to one, is left out, so an open pause alarm
+			// closes quietly.
+			if cfg.PausePerMinute > 0 && !ignoresPause[t.deviceID] && !ignoresPause[t.peerID] {
 				e := t
 				e.key, e.kind, e.clearAfter, e.down = fmt.Sprintf("x:%d", id), "pause", errorClearAfter, false
 				e.skip = t.skip || !rxPause.Valid || !sampled.Valid || now-sampled.Int64 > 45

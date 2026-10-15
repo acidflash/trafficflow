@@ -453,3 +453,24 @@ func TestAlertIgnorePause(t *testing.T) {
 		t.Fatalf("want a port alarm, got %v", got)
 	}
 }
+
+func TestAlertIgnorePauseOnServer(t *testing.T) {
+	s := testStore(t)
+	secret, _ := s.encrypt(`{"community":"c"}`)
+	_, _ = s.db.Exec("INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES('core','192.0.2.1','swos','2c',?,'online')", secret)
+	_, _ = s.db.Exec("INSERT INTO devices(name,address,os,kind,snmp_version,credential,status,ignore_pause) VALUES('nas','external:1','external','server','',?,'unknown',1)", secret)
+	_, _ = s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,rx_pause,last_sample) VALUES(1,1,'ether1','up',9000,?),(2,1,'Anslutning','unknown',NULL,NULL)", time.Now().Unix())
+	_, _ = s.db.Exec("INSERT INTO links(a_interface_id,b_interface_id,source) VALUES(1,2,'manual')")
+	a, sent := testAlerter(s)
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("switch port towards a server that ignores pause alarmed: %v", got)
+	}
+	_, _ = s.db.Exec("UPDATE interfaces SET status='down' WHERE id=1")
+	a.evaluate(t.Context())
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 1 || len(got[0]) != 1 || got[0][0].Kind != "port" {
+		t.Fatalf("want a port alarm, got %v", got)
+	}
+}

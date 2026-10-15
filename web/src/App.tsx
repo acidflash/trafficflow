@@ -328,6 +328,7 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
   if (!selection || (!link && !device)) return <aside className="details empty-details"><MousePointerClick size={22}/><h2>Välj en enhet eller länk</h2><p>Klicka på kartan för att se portar, status och trafikhistorik.</p></aside>
   async function remove(kind: 'devices' | 'links', id: number) { if (!window.confirm(kind === 'devices' ? 'Ta bort enheten och dess länkar?' : 'Ta bort länken?')) return; try { await api(`/${kind}/${id}`, { method: 'DELETE' }); onDelete() } catch (e) { onError((e as Error).message) } }
   const fresh = (i: Interface) => i.lastSample != null && topology.serverTime - i.lastSample <= 45
+  async function toggleIgnorePause(d: Device) { try { await api(`/devices/${d.id}/alerts`, { method: 'PUT', body: JSON.stringify({ ignorePause: !d.ignorePause }) }); onSaved() } catch (e) { onError((e as Error).message) } }
   if (device?.os === 'external') {
     const port = topology.interfaces.find(i => i.deviceId === device.id), traffic = externalTraffic(topology, device)
     const server = isServer(device), noun = server ? 'server' : 'moln', kind = server ? 'server' : 'cloud'
@@ -343,6 +344,7 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
       {peers.length ? <div className="port-list">{peers.map(({ link, peer, owner }) => <div className="port-row" key={link.id}><span className={`status-dot ${peer.status}`}/><div><strong>{owner?.name || 'Okänd'} / {peer.name}</strong><small>{formatRate(peer.speedBps)}</small></div>{server
         ? <div className="port-rate"><span>↓ {fresh(peer) ? formatRate(peer.txBps) : '–'}</span><span>↑ {fresh(peer) ? formatRate(peer.rxBps) : '–'}</span></div>
         : <div className="port-rate">{fresh(peer) ? formatRate(peer.rxBps) : '–'}<small>in</small></div>}</div>)}</div> : <p className="muted">Inte kopplat ännu. Använd Ny länk och välj {device.name} / Anslutning mot {server ? 'switchporten' : 'routerns port'}.</p>}
+      <label className="check ignore-pause"><input type="checkbox" checked={device.ignorePause} onChange={() => toggleIgnorePause(device)}/> Ignorera RX pause-larm<small className="field-hint">Gäller {server ? 'switchporten mot servern' : 'routerns port mot molnet'}. Porten larmar fortfarande när den går ner.</small></label>
       <div className="inline-form maintenance-box"><MaintenanceSection key={device.id} until={device.maintenanceUntil} devices={topology.devices} device={device}/></div>
       <div className="detail-foot">{!editing && <button className="secondary" onClick={() => setEditing(true)}><Pencil size={15}/> Redigera {noun}</button>}<button className="text-danger" onClick={() => remove('devices', device.id)}><Trash2 size={15}/> Ta bort {noun}</button></div>
     </>)
@@ -351,7 +353,6 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
     const ports = topology.interfaces.filter(i => i.deviceId === device.id)
     const up = ports.filter(i => i.status === 'up').length
     const linked = new Set(topology.links.flatMap(l => [l.aInterfaceId, l.bInterfaceId])), alarmed = new Set(topology.alarms.map(a => a.interfaceId))
-    async function toggleIgnorePause() { try { await api(`/devices/${device!.id}/alerts`, { method: 'PUT', body: JSON.stringify({ ignorePause: !device!.ignorePause }) }); onSaved() } catch (e) { onError((e as Error).message) } }
     async function toggleAlert(i: Interface) { try { await api(`/interfaces/${i.id}`, { method: 'PATCH', body: JSON.stringify({ alert: !i.alert }) }); onSaved() } catch (e) { onError((e as Error).message) } }
     const alertButton = (i: Interface) => { const always = linked.has(i.id), on = always || i.alert; return <button className={`port-alert ${on ? 'on' : ''}`} disabled={always} aria-pressed={on} aria-label={`Larm för ${i.name}`} title={always ? 'Länkport – bevakas alltid' : on ? 'Larmar när porten går ner. Klicka för att stänga av.' : 'Larma när porten går ner'} onClick={() => toggleAlert(i)}>{on ? <BellRing size={14}/> : <BellOff size={14}/>}</button> }
     return panel(<>
@@ -363,7 +364,7 @@ function DetailPanel({ topology, selection, sheet, onClose, onDelete, onSaved, o
       {editing && <EditDevice key={device.id} device={device} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onSaved() }}/>}
       <div className="section-heading"><h3>Portar</h3><span>{up} uppe av {ports.length}</span></div>
       {ports.length ? <div className="port-list">{ports.map(i => <div className={`port-row ${i.status} ${alarmed.has(i.id) ? 'is-alarm' : ''}`} key={i.id}><span className={`status-dot ${i.status}`}/><div><strong>{i.name}</strong><small>{i.description && i.description !== i.name ? i.description : i.status === 'up' && i.speedBps ? formatRate(i.speedBps) : i.status === 'down' ? 'Ingen länk' : 'Okänd status'}</small>{fresh(i) && errorRate(i) > 0 && <small className="port-errors" title="RX/TX-fel per minut senaste mätningen">RX/TX-fel {formatErrors(i.rxErrors)} / {formatErrors(i.txErrors)} per min</small>}{fresh(i) && (i.rxPause || 0) > 0 && <small className="port-errors" title="Mottagna pause-ramar per minut senaste mätningen">RX pause {formatErrors(i.rxPause)} per min</small>}</div>{fresh(i) && i.status === 'up' && <div className="port-rate"><span>↓ {formatRate(i.rxBps)}</span><span>↑ {formatRate(i.txBps)}</span></div>}{alertButton(i)}</div>)}</div> : <p className="muted">Portar visas efter första lyckade SNMP-avläsningen.</p>}
-      <label className="check ignore-pause"><input type="checkbox" checked={device.ignorePause} onChange={toggleIgnorePause}/> Ignorera RX pause-larm<small className="field-hint">Portarna larmar fortfarande när de går ner.</small></label>
+      <label className="check ignore-pause"><input type="checkbox" checked={device.ignorePause} onChange={() => toggleIgnorePause(device)}/> Ignorera RX pause-larm<small className="field-hint">Portarna larmar fortfarande när de går ner.</small></label>
       <div className="inline-form maintenance-box"><MaintenanceSection key={device.id} until={device.maintenanceUntil} devices={topology.devices} device={device}/></div>
       <div className="detail-foot">{!editing && <button className="secondary" onClick={() => setEditing(true)}><Pencil size={15}/> Redigera enhet</button>}<button className="text-danger" onClick={() => remove('devices', device.id)}><Trash2 size={15}/> Ta bort enhet</button></div>
     </>)

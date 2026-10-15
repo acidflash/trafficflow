@@ -248,7 +248,8 @@ type deviceView struct {
 	Y           *float64 `json:"y"`
 	// MaintenanceUntil is when maintenance covering this device ends; 0 when none is running.
 	MaintenanceUntil int64 `json:"maintenanceUntil"`
-	// IgnorePause turns off RX pause alarms for the device; port down still alarms.
+	// IgnorePause turns off RX pause alarms for the device's ports, or for a server or cloud the
+	// switch port it is linked to; port down still alarms.
 	IgnorePause bool `json:"ignorePause"`
 }
 type interfaceView struct {
@@ -554,7 +555,8 @@ func (a *server) updateDevice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
-// deviceAlerts turns RX pause alarms on or off for a device. Its ports still alarm when they go down.
+// deviceAlerts turns RX pause alarms on or off for a device. On a server or cloud it covers the
+// switch port it is linked to. Ports still alarm when they go down.
 func (a *server) deviceAlerts(w http.ResponseWriter, r *http.Request) {
 	id, err := idParam(r)
 	if err != nil {
@@ -568,7 +570,7 @@ func (a *server) deviceAlerts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, err.Error())
 		return
 	}
-	result, err := a.store.db.ExecContext(r.Context(), "UPDATE devices SET ignore_pause=? WHERE id=? AND os!='external'", input.IgnorePause, id)
+	result, err := a.store.db.ExecContext(r.Context(), "UPDATE devices SET ignore_pause=? WHERE id=?", input.IgnorePause, id)
 	if err != nil {
 		writeError(w, 500, "Kunde inte spara enheten")
 		return
