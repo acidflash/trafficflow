@@ -140,7 +140,7 @@ func TestMaintenanceForOneDevice(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, _ = s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(1,1,'ether1','up'),(2,1,'ether1','up')")
+	_, _ = s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,first_up) VALUES(1,1,'ether1','up',1),(2,1,'ether1','up',1)")
 	_, _ = s.db.Exec("INSERT INTO links(a_interface_id,b_interface_id,source) VALUES(1,2,'manual')")
 	now := time.Now().Unix()
 	_, _ = s.db.Exec("INSERT INTO maintenance(device_id,starts_at,ends_at) VALUES(2,?,?)", now-60, now+3600)

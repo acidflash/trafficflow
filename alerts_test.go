@@ -96,7 +96,7 @@ func TestAlertWatchedPorts(t *testing.T) {
 		{3, "uplink", "down"}, // 5: link port on a device that does not answer
 		{2, "downlink", "up"}, // 6: link peer
 	} {
-		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(?,?,?,?)", row.device, index+1, row.name, row.status); err != nil {
+		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,first_up) VALUES(?,?,?,?,1)", row.device, index+1, row.name, row.status); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -256,7 +256,7 @@ func TestAlertInterfaceErrors(t *testing.T) {
 		}
 	}
 	for index, device := range []int{1, 2, 1} {
-		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(?,?,?,'up')", device, index+1, fmt.Sprintf("ether%d", index+1)); err != nil {
+		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,first_up) VALUES(?,?,?,'up',1)", device, index+1, fmt.Sprintf("ether%d", index+1)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -341,7 +341,7 @@ func TestAlertRxPause(t *testing.T) {
 		}
 	}
 	for index, device := range []int{1, 2} {
-		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status) VALUES(?,?,?,'up')", device, index+1, fmt.Sprintf("ether%d", index+1)); err != nil {
+		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,first_up) VALUES(?,?,?,'up',1)", device, index+1, fmt.Sprintf("ether%d", index+1)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -406,7 +406,7 @@ func TestAlertIgnorePause(t *testing.T) {
 		}
 	}
 	for index, device := range []int{1, 2} {
-		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,rx_pause,last_sample) VALUES(?,?,?,'up',0,?)", device, index+1, fmt.Sprintf("ether%d", index+1), time.Now().Unix()); err != nil {
+		if _, err := s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,rx_pause,last_sample,first_up) VALUES(?,?,?,'up',0,?,1)", device, index+1, fmt.Sprintf("ether%d", index+1), time.Now().Unix()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -459,7 +459,7 @@ func TestAlertIgnorePauseOnServer(t *testing.T) {
 	secret, _ := s.encrypt(`{"community":"c"}`)
 	_, _ = s.db.Exec("INSERT INTO devices(name,address,os,snmp_version,credential,status) VALUES('core','192.0.2.1','swos','2c',?,'online')", secret)
 	_, _ = s.db.Exec("INSERT INTO devices(name,address,os,kind,snmp_version,credential,status,ignore_pause) VALUES('nas','external:1','external','server','',?,'unknown',1)", secret)
-	_, _ = s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,rx_pause,last_sample) VALUES(1,1,'ether1','up',9000,?),(2,1,'Anslutning','unknown',NULL,NULL)", time.Now().Unix())
+	_, _ = s.db.Exec("INSERT INTO interfaces(device_id,if_index,name,status,rx_pause,last_sample,first_up) VALUES(1,1,'ether1','up',9000,?,1),(2,1,'Anslutning','unknown',NULL,NULL,1)", time.Now().Unix())
 	_, _ = s.db.Exec("INSERT INTO links(a_interface_id,b_interface_id,source) VALUES(1,2,'manual')")
 	a, sent := testAlerter(s)
 	a.evaluate(t.Context())
@@ -472,5 +472,61 @@ func TestAlertIgnorePauseOnServer(t *testing.T) {
 	a.evaluate(t.Context())
 	if got := sent(); len(got) != 1 || len(got[0]) != 1 || got[0][0].Kind != "port" {
 		t.Fatalf("want a port alarm, got %v", got)
+	}
+}
+
+func TestAlertNewPort(t *testing.T) {
+	s := testStore(t)
+	secret, _ := s.encrypt(`{"community":"c"}`)
+	if _, err := s.db.Exec("INSERT INTO devices(id,name,address,os,snmp_version,credential,status) VALUES(1,'sw1','192.0.2.1','swos','2c',?,'online')", secret); err != nil {
+		t.Fatal(err)
+	}
+	// Port 1 was in use when it was discovered; port 2 never has been.
+	if _, err := s.db.Exec("INSERT INTO interfaces(id,device_id,if_index,name,status,first_up) VALUES(10,1,1,'Port1','up',1),(11,1,2,'Port2','down',NULL)"); err != nil {
+		t.Fatal(err)
+	}
+	a, sent := testAlerter(s)
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("notice without a new port: %v", got)
+	}
+	_, _ = s.db.Exec("UPDATE interfaces SET status='up' WHERE id=11")
+	a.evaluate(t.Context())
+	got := sent()
+	if len(got) != 1 || len(got[0]) != 1 || got[0][0].Kind != "newport" || got[0][0].Title != "sw1 / Port2" {
+		t.Fatalf("want one new port notice, got %v", got)
+	}
+	if !strings.Contains(discordText(got[0]), "första gången") {
+		t.Fatalf("discord text: %s", discordText(got[0]))
+	}
+	var open, closed int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM alarms WHERE cleared_at IS NULL").Scan(&open)
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM alarms WHERE kind='newport' AND cleared_at IS NOT NULL").Scan(&closed)
+	if open != 0 || closed != 1 {
+		t.Fatalf("want the notice in history only, got %d open, %d closed", open, closed)
+	}
+	// Going down and up again is not new.
+	_, _ = s.db.Exec("UPDATE interfaces SET status='down' WHERE id=11")
+	a.evaluate(t.Context())
+	_, _ = s.db.Exec("UPDATE interfaces SET status='up' WHERE id=11")
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("repeated new port notice: %v", got)
+	}
+	// Turned off, a new port is still marked as seen but nothing is sent.
+	cfg, _ := s.loadAlertConfig(t.Context())
+	cfg.NewPorts = false
+	if err := s.saveAlertConfig(t.Context(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = s.db.Exec("INSERT INTO interfaces(id,device_id,if_index,name,status) VALUES(12,1,3,'Port3','up')")
+	a.evaluate(t.Context())
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("notice while turned off: %v", got)
+	}
+	var firstUp *int64
+	_ = s.db.QueryRow("SELECT first_up FROM interfaces WHERE id=12").Scan(&firstUp)
+	if firstUp == nil {
+		t.Fatal("port not marked as seen while notices are off")
 	}
 }

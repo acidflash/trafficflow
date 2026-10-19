@@ -233,7 +233,7 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
   const set = (patch: Partial<AlertSettings>) => setSettings(s => s && { ...s, ...patch })
   async function save() {
     if (!settings) return false
-    const body = { discordEnabled: settings.discordEnabled, discordWebhook: webhook.trim(), emailEnabled: settings.emailEnabled, smtpHost: settings.smtpHost, smtpPort: Number(settings.smtpPort), smtpSecurity: settings.smtpSecurity, smtpUser: settings.smtpUser, smtpPassword: password, from: settings.from, to: to.split(/[,;\s]+/).filter(Boolean), errorsPerMinute: Number(settings.errorsPerMinute), pausePerMinute: Number(settings.pausePerMinute) }
+    const body = { discordEnabled: settings.discordEnabled, discordWebhook: webhook.trim(), emailEnabled: settings.emailEnabled, smtpHost: settings.smtpHost, smtpPort: Number(settings.smtpPort), smtpSecurity: settings.smtpSecurity, smtpUser: settings.smtpUser, smtpPassword: password, from: settings.from, to: to.split(/[,;\s]+/).filter(Boolean), errorsPerMinute: Number(settings.errorsPerMinute), pausePerMinute: Number(settings.pausePerMinute), newPorts: settings.newPorts }
     const saved = await api<AlertSettings>('/alert-settings', { method: 'PUT', body: JSON.stringify(body) })
     setSettings(saved); setTo(saved.to.join(', ')); setWebhook(''); setPassword('')
     return true
@@ -253,6 +253,7 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
     {settings ? <>
       <label>Larma vid RX/TX-fel per minut<input value={settings.errorsPerMinute} onChange={e => set({ errorsPerMinute: Number(e.target.value) })} type="number" min={0} max={1000000} required/><small className="field-hint">Gäller länkportar och portar med larm på. 0 stänger av fellarmet.</small></label>
       <label>Larma vid RX pause per minut<input value={settings.pausePerMinute} onChange={e => set({ pausePerMinute: Number(e.target.value) })} type="number" min={0} max={100000000} required/><small className="field-hint">Pause-ramar som grannen skickar när den inte hinner ta emot. 0 stänger av pauselarmet.</small></label>
+      <label className="check"><input type="checkbox" checked={settings.newPorts} onChange={e => set({ newPorts: e.target.checked })}/> Meddela när en port kopplas in för första gången</label>
       <fieldset className="channel"><label className="check"><input type="checkbox" checked={settings.discordEnabled} onChange={e => set({ discordEnabled: e.target.checked })}/> Discord</label>
         {settings.discordEnabled && <label>Webhook-URL<input value={webhook} onChange={e => setWebhook(e.target.value)} type="password" autoComplete="off" placeholder={settings.hasDiscordWebhook ? 'Sparad – lämna tomt' : 'https://discord.com/api/webhooks/…'} required={!settings.hasDiscordWebhook}/></label>}{settings.discordEnabled && testButton('discord')}</fieldset>
       <fieldset className="channel"><label className="check"><input type="checkbox" checked={settings.emailEnabled} onChange={e => set({ emailEnabled: e.target.checked })}/> E-post</label>
@@ -270,7 +271,7 @@ function AlertPanel({ topology, onSelect, onCancel }: { topology: Topology; onSe
       <button className="primary" disabled={busy || testing !== null}>{busy ? 'Sparar…' : 'Spara'}</button>
     </> : !error ? <p className="muted">Hämtar inställningar…</p> : <div className="form-error" role="alert">{error}</div>}
     {recent.length > 0 && <div><button type="button" className="dismissed-toggle history-toggle" aria-expanded={showHistory} onClick={() => setShowHistory(!showHistory)}><ChevronRight size={14} className={showHistory ? 'open' : ''}/> Historik <span>{recent.length}</span></button>
-      {showHistory && <div className="alarm-history">{recent.map(a => <div key={a.id}><strong>{a.title}</strong><small>{new Date(a.startedAt * 1000).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })} · {a.kind === 'errors' ? 'fel i' : a.kind === 'pause' ? 'pause i' : 'nere'} {since((a.clearedAt || a.startedAt) - a.startedAt)}</small></div>)}</div>}</div>}
+      {showHistory && <div className="alarm-history">{recent.map(a => <div key={a.id}><strong>{a.title}</strong><small>{new Date(a.startedAt * 1000).toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' })} · {a.kind === 'newport' ? 'uppe för första gången' : `${a.kind === 'errors' ? 'fel i' : a.kind === 'pause' ? 'pause i' : 'nere'} ${since((a.clearedAt || a.startedAt) - a.startedAt)}`}</small></div>)}</div>}</div>}
   </form>
 }
 

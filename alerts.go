@@ -48,10 +48,13 @@ type alertConfig struct {
 	// PausePerMinute is how many received pause frames per minute a watched port may see before
 	// it alarms; 0 turns pause alarms off.
 	PausePerMinute int `json:"pausePerMinute"`
+	// NewPorts sends a notice when a port that has never been up comes up, e.g. a newly
+	// connected customer.
+	NewPorts bool `json:"newPorts"`
 }
 
 func (s *store) loadAlertConfig(ctx context.Context) (alertConfig, error) {
-	cfg := alertConfig{SMTPPort: 587, SMTPSecurity: "starttls", To: []string{}, ErrorsPerMinute: 10, PausePerMinute: 6000}
+	cfg := alertConfig{SMTPPort: 587, SMTPSecurity: "starttls", To: []string{}, ErrorsPerMinute: 10, PausePerMinute: 6000, NewPorts: true}
 	var value []byte
 	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key='alerts'").Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -150,7 +153,7 @@ func (c *alertConfig) validate() error {
 
 type alertEvent struct {
 	Down    bool
-	Kind    string // device, port, errors or pause
+	Kind    string // device, port, errors, pause or newport
 	Title   string // device name, or "device / port"
 	Address string
 	Detail  string // what an error or pause alarm saw, e.g. "RX 120 fel/min"
@@ -336,6 +339,43 @@ func (a *alerter) evaluate(ctx context.Context) {
 	rows.Close()
 
 	var events []alertEvent
+	// A port up for the first time is a one-off notice, so its alarm opens and closes at once and
+	// only shows in the history. The device must answer, or the status is stale.
+	type newPort struct {
+		id, deviceID          int64
+		device, port, address string
+	}
+	var fresh []newPort
+	rows, err = a.store.db.QueryContext(ctx, `SELECT i.id,d.id,d.name,i.name,d.address FROM interfaces i JOIN devices d ON d.id=i.device_id
+		WHERE i.status='up' AND i.first_up IS NULL AND d.status='online' AND d.os!='external'`)
+	if err != nil {
+		log.Printf("alerts: %v", err)
+		return
+	}
+	for rows.Next() {
+		var x newPort
+		if rows.Scan(&x.id, &x.deviceID, &x.device, &x.port, &x.address) == nil {
+			fresh = append(fresh, x)
+		}
+	}
+	rows.Close()
+	for _, x := range fresh {
+		if _, err := a.store.db.ExecContext(ctx, "UPDATE interfaces SET first_up=? WHERE id=?", now, x.id); err != nil {
+			log.Printf("alerts: %v", err)
+			continue
+		}
+		if !cfg.NewPorts {
+			continue
+		}
+		title, muted := x.device+" / "+x.port, mutedDevice(x.deviceID)
+		if _, err := a.store.db.ExecContext(ctx, "INSERT INTO alarms(kind,device_id,interface_id,title,started_at,cleared_at,quiet) VALUES('newport',?,?,?,?,?,?)", x.deviceID, x.id, title, now, now, muted); err != nil {
+			log.Printf("alerts: %v", err)
+			continue
+		}
+		if !muted {
+			events = append(events, alertEvent{Down: true, Kind: "newport", Title: title, Address: x.address, Since: now, At: now})
+		}
+	}
 	watched := map[string]bool{}
 	a.mu.Lock()
 	for _, t := range targets {
@@ -449,6 +489,9 @@ func (e alertEvent) line() string {
 		}
 		return fmt.Sprintf("OK    %s (%s) normal pause efter %s", e.Title, e.Address, formatDuration(e.At-e.Since))
 	}
+	if e.Kind == "newport" {
+		return fmt.Sprintf("NY    %s (%s) uppe för första gången %s", e.Title, e.Address, time.Unix(e.Since, 0).Format("15:04"))
+	}
 	if e.Down {
 		return fmt.Sprintf("NERE  %s (%s) sedan %s", e.Title, e.Address, time.Unix(e.Since, 0).Format("15:04"))
 	}
@@ -467,6 +510,8 @@ func alertSubject(events []alertEvent) string {
 			state = "tar emot många pause-ramar"
 		case events[0].Kind == "pause":
 			state = "har normal pause igen"
+		case events[0].Kind == "newport":
+			state = "uppe för första gången"
 		case events[0].Down:
 			state = "nere"
 		}
@@ -506,6 +551,10 @@ func discordText(events []alertEvent) string {
 			} else {
 				lines = append(lines, fmt.Sprintf("🟢 **OK** %s `%s` normal pause efter %s", e.Title, e.Address, formatDuration(e.At-e.Since)))
 			}
+			continue
+		}
+		if e.Kind == "newport" {
+			lines = append(lines, fmt.Sprintf("🔵 **NY PORT** %s `%s` uppe för första gången %s", e.Title, e.Address, time.Unix(e.Since, 0).Format("15:04")))
 			continue
 		}
 		if e.Down {

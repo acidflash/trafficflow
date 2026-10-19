@@ -471,9 +471,15 @@ func (c *collector) refreshInterfaces(ctx context.Context, g *gosnmp.GoSNMP, dev
 		if pduNumber(statuses[key]) == 1 {
 			status = "up"
 		}
-		_, err = c.store.db.ExecContext(ctx, `INSERT INTO interfaces(device_id,if_index,name,description,mac,speed_bps,status) VALUES(?,?,?,?,?,?,?)
+		// A port that is already up when it is discovered is not news; one that comes up later is.
+		var firstUp *int64
+		if status == "up" {
+			now := time.Now().Unix()
+			firstUp = &now
+		}
+		_, err = c.store.db.ExecContext(ctx, `INSERT INTO interfaces(device_id,if_index,name,description,mac,speed_bps,status,first_up) VALUES(?,?,?,?,?,?,?,?)
 			ON CONFLICT(device_id,if_index) DO UPDATE SET name=excluded.name,description=excluded.description,mac=excluded.mac,speed_bps=excluded.speed_bps,status=excluded.status`,
-			deviceID, index, name, pduString(descs[key]), pduMac(macs[key]), speed, status)
+			deviceID, index, name, pduString(descs[key]), pduMac(macs[key]), speed, status, firstUp)
 		if err != nil {
 			return err
 		}

@@ -133,6 +133,18 @@ func openStore() (*store, error) {
 			return nil, fmt.Errorf("migrate: %w", err)
 		}
 	}
+	// When a port was first seen up, so a port taken into use for the first time can alarm. Ports
+	// already in use, or on a device that does not answer, when the column arrives count as seen.
+	if _, err := db.Exec("ALTER TABLE interfaces ADD COLUMN first_up INTEGER"); err == nil {
+		if _, err := db.Exec(`UPDATE interfaces SET first_up=strftime('%s','now')
+			WHERE status!='down' OR EXISTS (SELECT 1 FROM links l WHERE l.a_interface_id=interfaces.id OR l.b_interface_id=interfaces.id)`); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("migrate: %w", err)
+		}
+	} else if !strings.Contains(err.Error(), "duplicate column") {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	// Externals created before servers existed were all clouds.
 	if _, err := db.Exec("UPDATE devices SET kind='cloud' WHERE os='external' AND kind=''"); err != nil {
 		db.Close()
